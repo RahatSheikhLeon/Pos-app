@@ -4,36 +4,49 @@ import { Search, Eye, RotateCcw, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppDispatch, RootState } from '../store';
 import { fetchTransactions, returnTransaction } from '../store/slices/transactionsSlice';
-import { Transaction } from '../types';
+import { Transaction, TransactionItem } from '../types';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
 import { TableRowSkeleton, CardSkeleton } from '../components/ui/Skeleton';
 
+// Return quantities keyed by productId
+type ReturnQtys = Record<string, number>;
+
 export default function Transactions() {
   const dispatch = useDispatch<AppDispatch>();
-  const { items, totalRevenue, loading } = useSelector((state: RootState) => state.transactions);
+  const { items, totalRevenue, loading } = useSelector(
+    (state: RootState) => state.transactions
+  );
   const { currencySymbol } = useSelector((state: RootState) => state.settings);
 
+  // Search by ID only
   const [search, setSearch] = useState('');
+
+  // Detail modal
   const [selected, setSelected] = useState<Transaction | null>(null);
+
+  // Return state
   const [returning, setReturning] = useState<string | null>(null);
+  const [returnTarget, setReturnTarget] = useState<Transaction | null>(null);
+  const [returnQtys, setReturnQtys] = useState<ReturnQtys>({});
 
   useEffect(() => {
     dispatch(fetchTransactions());
   }, [dispatch]);
 
-  const filtered = items.filter((t) => {
-    const q = search.toLowerCase();
-    return (
-      !q ||
-      t.id.toLowerCase().includes(q) ||
-      t.paymentMethod.includes(q) ||
-      (t.customerEmail && t.customerEmail.toLowerCase().includes(q))
-    );
-  });
+  // Filter by ID only
+  const filtered = items.filter(
+    (t) => !search.trim() || t.id.toLowerCase().includes(search.trim().toLowerCase())
+  );
 
   const fmt = (n: number) =>
     `${currencySymbol}${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+  const statusBadge = (t: Transaction) => {
+    if (t.status === 'returned') return <Badge variant="red">Returned</Badge>;
+    if (t.status === 'partially_refunded') return <Badge variant="yellow">Partial Refund</Badge>;
+    return <Badge variant="green">Completed</Badge>;
+  };
 
   const paymentBadge = (method: string) => {
     if (method === 'cash') return <Badge variant="green">Cash</Badge>;
@@ -41,14 +54,51 @@ export default function Transactions() {
     return <Badge variant="indigo">Wallet</Badge>;
   };
 
-  const handleReturn = async (id: string) => {
-    setReturning(id);
+  // How many units of a given item have already been returned
+  const alreadyReturned = (t: Transaction, productId: string) => {
+    const r = t.returnedItems?.find((ri) => ri.productId === productId);
+    return r?.quantity ?? 0;
+  };
+
+  // Remaining returnable quantity
+  const remainingQty = (t: Transaction, item: TransactionItem) =>
+    item.quantity - alreadyReturned(t, item.productId);
+
+  // Open return flow
+  const openReturn = (t: Transaction) => {
+    const returnable = t.items.filter((i) => remainingQty(t, i) > 0);
+    if (returnable.length === 0) {
+      toast('All items have already been returned');
+      return;
+    }
+
+    if (returnable.length === 1) {
+      // Single returnable item → confirm and process immediately
+      const item = returnable[0];
+      const qty = remainingQty(t, item);
+      confirmReturn(t, [{ productId: item.productId, quantity: qty }]);
+      return;
+    }
+
+    // Multiple items → open modal with quantity selectors
+    const initial: ReturnQtys = {};
+    returnable.forEach((i) => {
+      initial[i.productId] = remainingQty(t, i); // default: return all
+    });
+    setReturnQtys(initial);
+    setReturnTarget(t);
+  };
+
+  const confirmReturn = async (
+    t: Transaction,
+    items?: { productId: string; quantity: number }[]
+  ) => {
+    setReturning(t.id);
+    setReturnTarget(null);
     try {
-      await dispatch(returnTransaction(id)).unwrap();
-      toast.success('Transaction returned successfully');
-      if (selected?.id === id) {
-        setSelected(null);
-      }
+      await dispatch(returnTransaction({ id: t.id, items })).unwrap();
+      if (selected?.id === t.id) setSelected(null);
+      toast.success('Return processed successfully');
     } catch (err: any) {
       toast.error(err.message || 'Return failed');
     } finally {
@@ -56,8 +106,33 @@ export default function Transactions() {
     }
   };
 
+  const handleConfirmPartialReturn = () => {
+    if (!returnTarget) return;
+    const payload = Object.entries(returnQtys)
+      .filter(([, qty]) => qty > 0)
+      .map(([productId, quantity]) => ({ productId, quantity }));
+
+    if (payload.length === 0) {
+      toast.error('Select at least one item to return');
+      return;
+    }
+    confirmReturn(returnTarget, payload);
+  };
+
+  // Refund amount preview for the return modal
+  const returnRefundPreview = () => {
+    if (!returnTarget) return 0;
+    let amount = 0;
+    for (const [productId, qty] of Object.entries(returnQtys)) {
+      const item = returnTarget.items.find((i) => i.productId === productId);
+      if (item && qty > 0) amount += item.unitPrice * qty;
+    }
+    return amount;
+  };
+
   return (
     <div className="space-y-6">
+      {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {loading ? (
           <>
@@ -92,16 +167,18 @@ export default function Transactions() {
         )}
       </div>
 
+      {/* Search — ID only */}
       <div className="relative">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           className="input pl-9"
-          placeholder="Search by ID, payment method or customer..."
+          placeholder="Search by Transaction ID..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
+      {/* Transaction table */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -118,78 +195,80 @@ export default function Transactions() {
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
               {loading ? (
-                Array.from({ length: 8 }).map((_, i) => <TableRowSkeleton key={i} cols={7} />)
+                Array.from({ length: 8 }).map((_, i) => (
+                  <TableRowSkeleton key={i} cols={7} />
+                ))
               ) : filtered.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
-                    No transactions found
+                    {search ? `No transactions found for ID "${search}"` : 'No transactions yet'}
                   </td>
                 </tr>
               ) : (
-                filtered.map((t) => (
-                  <tr
-                    key={t.id}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
-                  >
-                    <td className="px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
-                      #{t.id.slice(-8).toUpperCase()}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                      {new Date(t.date).toLocaleString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                      {t.items.length} item{t.items.length !== 1 ? 's' : ''}
-                    </td>
-                    <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">
-                      {fmt(t.total)}
-                    </td>
-                    <td className="px-4 py-3">{paymentBadge(t.paymentMethod)}</td>
-                    <td className="px-4 py-3">
-                      {t.returned ? (
-                        <Badge variant="red">Returned</Badge>
-                      ) : (
-                        <Badge variant="green">Completed</Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1 justify-end">
-                        <button
-                          onClick={() => setSelected(t)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
-                          title="View details"
-                        >
-                          <Eye size={15} />
-                        </button>
-                        {!t.returned && (
+                filtered.map((t) => {
+                  const canReturn =
+                    t.status !== 'returned' &&
+                    t.items.some((i) => remainingQty(t, i) > 0);
+                  return (
+                    <tr
+                      key={t.id}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                    >
+                      <td className="px-4 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
+                        #{t.id.slice(-8).toUpperCase()}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                        {new Date(t.date).toLocaleString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                        {t.items.length} item{t.items.length !== 1 ? 's' : ''}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">
+                        {fmt(t.total)}
+                      </td>
+                      <td className="px-4 py-3">{paymentBadge(t.paymentMethod)}</td>
+                      <td className="px-4 py-3">{statusBadge(t)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 justify-end">
                           <button
-                            onClick={() => handleReturn(t.id)}
-                            disabled={returning === t.id}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors"
-                            title="Return"
+                            onClick={() => setSelected(t)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+                            title="View details"
                           >
-                            {returning === t.id ? (
-                              <span className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-500 rounded-full animate-spin block" />
-                            ) : (
-                              <RotateCcw size={15} />
-                            )}
+                            <Eye size={15} />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {canReturn && (
+                            <button
+                              onClick={() => openReturn(t)}
+                              disabled={returning === t.id}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors disabled:opacity-50"
+                              title="Process return"
+                            >
+                              {returning === t.id ? (
+                                <span className="w-3.5 h-3.5 border-2 border-amber-400/30 border-t-amber-500 rounded-full animate-spin block" />
+                              ) : (
+                                <RotateCcw size={15} />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
 
+      {/* Detail modal */}
       <Modal
         open={!!selected}
         onClose={() => setSelected(null)}
@@ -209,18 +288,10 @@ export default function Transactions() {
                 <p className="text-gray-400 text-xs mb-0.5">Payment Method</p>
                 <div>{paymentBadge(selected.paymentMethod)}</div>
               </div>
-              {selected.customerEmail && (
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Customer Email</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{selected.customerEmail}</p>
-                </div>
-              )}
-              {selected.customerPhone && (
-                <div>
-                  <p className="text-gray-400 text-xs mb-0.5">Customer Phone</p>
-                  <p className="font-medium text-gray-900 dark:text-white">{selected.customerPhone}</p>
-                </div>
-              )}
+              <div>
+                <p className="text-gray-400 text-xs mb-0.5">Status</p>
+                <div>{statusBadge(selected)}</div>
+              </div>
             </div>
 
             <div className="border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
@@ -229,28 +300,41 @@ export default function Transactions() {
                   <tr className="bg-gray-50 dark:bg-gray-700/50 text-xs text-gray-500 dark:text-gray-400">
                     <th className="px-4 py-2 text-left font-medium">Product</th>
                     <th className="px-4 py-2 text-right font-medium">Qty</th>
-                    <th className="px-4 py-2 text-right font-medium">Price</th>
+                    <th className="px-4 py-2 text-right font-medium">Unit</th>
                     <th className="px-4 py-2 text-right font-medium">Total</th>
+                    <th className="px-4 py-2 text-right font-medium">Returned</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
-                  {selected.items.map((item, i) => (
-                    <tr key={i}>
-                      <td className="px-4 py-2 text-gray-900 dark:text-white">
-                        {item.productName}
-                        <span className="text-xs text-gray-400 ml-1 font-mono">({item.sku})</span>
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-300">
-                        {item.quantity}
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-300">
-                        {fmt(item.unitPrice)}
-                      </td>
-                      <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-white">
-                        {fmt(item.total)}
-                      </td>
-                    </tr>
-                  ))}
+                  {selected.items.map((item) => {
+                    const retQty = alreadyReturned(selected, item.productId);
+                    return (
+                      <tr key={item.productId}>
+                        <td className="px-4 py-2 text-gray-900 dark:text-white">
+                          {item.productName}
+                          <span className="text-xs text-gray-400 ml-1 font-mono">
+                            ({item.sku})
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-300">
+                          {item.quantity}
+                        </td>
+                        <td className="px-4 py-2 text-right text-gray-600 dark:text-gray-300">
+                          {fmt(item.unitPrice)}
+                        </td>
+                        <td className="px-4 py-2 text-right font-medium text-gray-900 dark:text-white">
+                          {fmt(item.total)}
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          {retQty > 0 ? (
+                            <Badge variant="yellow">{retQty} returned</Badge>
+                          ) : (
+                            <span className="text-xs text-gray-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -276,16 +360,109 @@ export default function Transactions() {
               </div>
             </div>
 
-            {!selected.returned && (
+            {selected.status !== 'returned' && selected.items.some((i) => remainingQty(selected, i) > 0) && (
               <button
-                className="w-full py-2 rounded-lg border border-amber-300 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-medium transition-colors flex items-center justify-center gap-2"
-                onClick={() => handleReturn(selected.id)}
+                className="w-full py-2 rounded-lg border border-amber-300 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                onClick={() => { setSelected(null); openReturn(selected); }}
                 disabled={returning === selected.id}
               >
                 <RotateCcw size={15} />
-                Return Transaction
+                Process Return
               </button>
             )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Partial return modal */}
+      <Modal
+        open={!!returnTarget}
+        onClose={() => setReturnTarget(null)}
+        title={`Return — #${returnTarget?.id.slice(-8).toUpperCase()}`}
+        size="md"
+      >
+        {returnTarget && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Select the quantity to return for each product. Set to 0 to skip an item.
+            </p>
+
+            <div className="space-y-3">
+              {returnTarget.items
+                .filter((i) => remainingQty(returnTarget, i) > 0)
+                .map((item) => {
+                  const max = remainingQty(returnTarget, item);
+                  const val = returnQtys[item.productId] ?? max;
+                  return (
+                    <div
+                      key={item.productId}
+                      className="flex items-center justify-between gap-4 p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                          {item.productName}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {fmt(item.unitPrice)} each · max {max} returnable
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() =>
+                            setReturnQtys((q) => ({
+                              ...q,
+                              [item.productId]: Math.max(0, (q[item.productId] ?? max) - 1),
+                            }))
+                          }
+                          className="w-7 h-7 rounded-full border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-bold"
+                        >
+                          −
+                        </button>
+                        <span className="w-8 text-center text-sm font-semibold text-gray-900 dark:text-white">
+                          {val}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setReturnQtys((q) => ({
+                              ...q,
+                              [item.productId]: Math.min(max, (q[item.productId] ?? max) + 1),
+                            }))
+                          }
+                          disabled={val >= max}
+                          className="w-7 h-7 rounded-full border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-bold disabled:opacity-40"
+                        >
+                          +
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            <div className="flex justify-between items-center py-2 border-t border-gray-100 dark:border-gray-700 text-sm font-semibold text-gray-900 dark:text-white">
+              <span>Estimated Refund</span>
+              <span className="text-green-600 dark:text-green-400">
+                {fmt(returnRefundPreview())}
+              </span>
+            </div>
+
+            <div className="flex gap-3">
+              <button className="btn-secondary flex-1" onClick={() => setReturnTarget(null)}>
+                Cancel
+              </button>
+              <button
+                className="flex-1 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                onClick={handleConfirmPartialReturn}
+                disabled={returning === returnTarget?.id}
+              >
+                {returning === returnTarget?.id ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <RotateCcw size={14} />
+                )}
+                Confirm Return
+              </button>
+            </div>
           </div>
         )}
       </Modal>

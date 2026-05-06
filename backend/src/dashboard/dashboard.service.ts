@@ -24,13 +24,13 @@ export class DashboardService {
     startOfMonth.setDate(now.getDate() - 30);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const active = allTransactions.filter((t) => !t.returned);
+    // Revenue stats count only non-fully-returned transactions
+    const countable = allTransactions.filter((t) => t.status !== 'returned');
+    const todayTx = countable.filter((t) => new Date(t.date) >= startOfToday);
+    const weeklyTx = countable.filter((t) => new Date(t.date) >= startOfWeek);
+    const monthlyTx = countable.filter((t) => new Date(t.date) >= startOfMonth);
 
-    const todayTx = active.filter((t) => new Date(t.date) >= startOfToday);
-    const weeklyTx = active.filter((t) => new Date(t.date) >= startOfWeek);
-    const monthlyTx = active.filter((t) => new Date(t.date) >= startOfMonth);
-
-    const sum = (txs: typeof active) =>
+    const sum = (txs: typeof countable) =>
       parseFloat(txs.reduce((s, t) => s + t.total, 0).toFixed(2));
 
     const lowStockProducts = this.productsService.getLowStock(10);
@@ -43,7 +43,10 @@ export class DashboardService {
       monthlySales: sum(monthlyTx),
       monthlyTransactions: monthlyTx.length,
       lowStockCount: lowStockProducts.length,
-      recentTransactions: allTransactions.slice(0, 10),
+      // Return activity feed — only returned / partially refunded
+      recentTransactions: allTransactions
+        .filter((t) => t.status === 'returned' || t.status === 'partially_refunded')
+        .slice(0, 10),
       lowStockProducts,
     };
   }

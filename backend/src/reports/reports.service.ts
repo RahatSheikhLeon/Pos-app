@@ -11,7 +11,7 @@ export class ReportsService {
     since.setDate(since.getDate() - days);
 
     const filtered = allTransactions.filter(
-      (t) => !t.returned && new Date(t.date) >= since,
+      (t) => t.status !== 'returned' && new Date(t.date) >= since,
     );
 
     const totalRevenue = parseFloat(

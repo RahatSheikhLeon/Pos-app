@@ -76,7 +76,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
-            <h2 className="font-semibold text-gray-900 dark:text-white">Recent Transactions</h2>
+            <h2 className="font-semibold text-gray-900 dark:text-white">Return Activity</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -86,15 +86,16 @@ export default function Dashboard() {
                   <th className="px-5 py-3 font-medium">Date</th>
                   <th className="px-5 py-3 font-medium">Amount</th>
                   <th className="px-5 py-3 font-medium">Payment</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/50">
                 {loading ? (
-                  Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={4} />)
+                  Array.from({ length: 5 }).map((_, i) => <TableRowSkeleton key={i} cols={5} />)
                 ) : data?.recentTransactions.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-5 py-8 text-center text-gray-400">
-                      No transactions yet
+                    <td colSpan={5} className="px-5 py-8 text-center text-gray-400">
+                      No returns yet
                     </td>
                   </tr>
                 ) : (
@@ -115,6 +116,15 @@ export default function Dashboard() {
                         {fmt(t.total)}
                       </td>
                       <td className="px-5 py-3">{paymentBadge(t.paymentMethod)}</td>
+                      <td className="px-5 py-3">
+                        {t.status === 'returned' ? (
+                          <Badge variant="red">Returned</Badge>
+                        ) : t.status === 'partially_refunded' ? (
+                          <Badge variant="yellow">Partial Refund</Badge>
+                        ) : (
+                          <Badge variant="green">Completed</Badge>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}

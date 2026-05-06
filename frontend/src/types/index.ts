@@ -25,6 +25,13 @@ export interface TransactionItem {
   total: number;
 }
 
+export interface ReturnedItem {
+  productId: string;
+  quantity: number;
+}
+
+export type TransactionStatus = 'completed' | 'returned' | 'partially_refunded';
+
 export interface Transaction {
   id: string;
   date: string;
@@ -35,7 +42,8 @@ export interface Transaction {
   total: number;
   paymentMethod: 'cash' | 'card' | 'wallet';
   memberId?: string;
-  returned: boolean;
+  status: TransactionStatus;
+  returnedItems: ReturnedItem[];
 }
 
 export interface DashboardStats {

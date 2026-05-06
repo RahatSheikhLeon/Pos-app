@@ -19,7 +19,7 @@ export default function StatCard({
   iconBg = 'bg-indigo-50 dark:bg-indigo-900/30',
 }: StatCardProps) {
   return (
-    <div className="card p-5 flex items-start gap-4">
+    <div className="card p-5 flex items-center gap-4">
       <div className={`p-3 rounded-xl ${iconBg}`}>
         <Icon size={20} className={iconColor} />
       </div>

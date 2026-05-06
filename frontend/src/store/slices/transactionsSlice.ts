@@ -25,8 +25,8 @@ export const fetchTransactions = createAsyncThunk(
 
 export const returnTransaction = createAsyncThunk(
   'transactions/return',
-  async (id: string) => {
-    return await transactionsApi.returnTransaction(id);
+  async ({ id, items }: { id: string; items?: { productId: string; quantity: number }[] }) => {
+    return await transactionsApi.returnTransaction(id, items);
   }
 );
 

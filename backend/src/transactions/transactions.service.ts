@@ -1,5 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { v4 as uuid } from 'uuid';
+import { ProductsService } from '../products/products.service';
 
 export interface TransactionItem {
   productId: string;
@@ -9,6 +10,13 @@ export interface TransactionItem {
   unitPrice: number;
   total: number;
 }
+
+export interface ReturnedItem {
+  productId: string;
+  quantity: number;
+}
+
+export type TransactionStatus = 'completed' | 'returned' | 'partially_refunded';
 
 export interface Transaction {
   id: string;
@@ -20,7 +28,8 @@ export interface Transaction {
   total: number;
   paymentMethod: 'cash' | 'card' | 'wallet';
   memberId?: string;
-  returned: boolean;
+  status: TransactionStatus;
+  returnedItems: ReturnedItem[];
 }
 
 const paymentMethods: Array<'cash' | 'card' | 'wallet'> = ['cash', 'card', 'wallet'];
@@ -82,7 +91,8 @@ function generateSeedTransactions(): Transaction[] {
       discount: 0,
       total,
       paymentMethod: paymentMethods[Math.floor(Math.random() * 3)],
-      returned: false,
+      status: 'completed',
+      returnedItems: [],
     });
   }
 
@@ -93,17 +103,14 @@ function generateSeedTransactions(): Transaction[] {
 export class TransactionsService {
   private transactions: Transaction[] = generateSeedTransactions();
 
+  constructor(private readonly productsService: ProductsService) {}
+
   findAll(search?: string, dateFrom?: string, dateTo?: string) {
     let result = [...this.transactions];
 
-    if (search) {
-      const q = search.toLowerCase();
-      result = result.filter(
-        (t) =>
-          t.id.toLowerCase().includes(q) ||
-          t.paymentMethod.includes(q) ||
-          (t.memberId && t.memberId.toLowerCase().includes(q)),
-      );
+    if (search?.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter((t) => t.id.toLowerCase().includes(q));
     }
 
     if (dateFrom) {
@@ -115,7 +122,7 @@ export class TransactionsService {
     }
 
     const totalRevenue = result
-      .filter((t) => !t.returned)
+      .filter((t) => t.status !== 'returned')
       .reduce((sum, t) => sum + t.total, 0);
 
     return {
@@ -130,20 +137,69 @@ export class TransactionsService {
     return t;
   }
 
-  create(data: Omit<Transaction, 'id' | 'returned'>): Transaction {
+  create(data: Omit<Transaction, 'id' | 'status' | 'returnedItems'>): Transaction {
     const transaction: Transaction = {
       ...data,
       id: uuid(),
-      returned: false,
+      status: 'completed',
+      returnedItems: [],
     };
     this.transactions.unshift(transaction);
     return transaction;
   }
 
-  return(id: string): Transaction {
+  processReturn(id: string, items?: ReturnedItem[]): Transaction {
     const t = this.findOne(id);
-    if (t.returned) throw new Error('Transaction already returned');
-    t.returned = true;
+    if (t.status === 'returned') {
+      throw new BadRequestException('Transaction is already fully returned');
+    }
+
+    const alreadyReturnedQty = (productId: string) =>
+      t.returnedItems.find((r) => r.productId === productId)?.quantity ?? 0;
+
+    if (!items || items.length === 0) {
+      // Full return — restock everything not yet returned
+      for (const item of t.items) {
+        const qty = item.quantity - alreadyReturnedQty(item.productId);
+        if (qty > 0) {
+          try { this.productsService.incrementStock(item.productId, qty); } catch { /* product deleted */ }
+        }
+      }
+      t.returnedItems = t.items.map((i) => ({ productId: i.productId, quantity: i.quantity }));
+      t.status = 'returned';
+      return t;
+    }
+
+    // Partial return — validate first
+    for (const ri of items) {
+      if (ri.quantity <= 0) continue;
+      const original = t.items.find((i) => i.productId === ri.productId);
+      if (!original) throw new BadRequestException(`Product ${ri.productId} not in transaction`);
+      if (alreadyReturnedQty(ri.productId) + ri.quantity > original.quantity) {
+        throw new BadRequestException(
+          `Cannot return ${ri.quantity} of "${original.productName}" — only ${original.quantity - alreadyReturnedQty(ri.productId)} returnable`,
+        );
+      }
+    }
+
+    // Apply returns + restock
+    for (const ri of items) {
+      if (ri.quantity <= 0) continue;
+      try { this.productsService.incrementStock(ri.productId, ri.quantity); } catch { /* product deleted */ }
+      const existing = t.returnedItems.find((r) => r.productId === ri.productId);
+      if (existing) {
+        existing.quantity += ri.quantity;
+      } else {
+        t.returnedItems.push({ productId: ri.productId, quantity: ri.quantity });
+      }
+    }
+
+    // Determine final status
+    const allDone = t.items.every(
+      (item) => alreadyReturnedQty(item.productId) >= item.quantity,
+    );
+    t.status = allDone ? 'returned' : 'partially_refunded';
+
     return t;
   }
 

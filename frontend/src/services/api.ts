@@ -53,7 +53,10 @@ export const transactionsApi = {
   getAll: (params?: { search?: string; dateFrom?: string; dateTo?: string }): Promise<any> =>
     http.get('/transactions', { params }),
   getById: (id: string): Promise<any> => http.get(`/transactions/${id}`),
-  returnTransaction: (id: string): Promise<any> => http.post(`/transactions/${id}/return`),
+  returnTransaction: (
+    id: string,
+    items?: { productId: string; quantity: number }[]
+  ): Promise<any> => http.post(`/transactions/${id}/return`, { items }),
 };
 
 export const reportsApi = {
