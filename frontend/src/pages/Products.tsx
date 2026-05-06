@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Search, ShoppingCart, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -9,6 +10,7 @@ import Badge from '../components/ui/Badge';
 import { ProductCardSkeleton } from '../components/ui/Skeleton';
 
 export default function Products() {
+  const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const { items, categories, loading } = useSelector((state: RootState) => state.products);
   const cartItems = useSelector((state: RootState) => state.cart.items);
@@ -65,12 +67,8 @@ export default function Products() {
             </option>
           ))}
         </select>
-        <a
-          href="/checkout"
-          onClick={(e) => {
-            e.preventDefault();
-            window.location.href = '/checkout';
-          }}
+        <button
+          onClick={() => navigate('/checkout')}
           className="relative btn-primary flex items-center gap-2 whitespace-nowrap"
         >
           <ShoppingCart size={16} />
@@ -80,7 +78,7 @@ export default function Products() {
               {cartCount}
             </span>
           )}
-        </a>
+        </button>
       </div>
 
       {loading ? (
