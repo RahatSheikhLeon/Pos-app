@@ -19,8 +19,7 @@ export interface Transaction {
   discount: number;
   total: number;
   paymentMethod: 'cash' | 'card' | 'wallet';
-  customerEmail?: string;
-  customerPhone?: string;
+  memberId?: string;
   returned: boolean;
 }
 
@@ -103,7 +102,7 @@ export class TransactionsService {
         (t) =>
           t.id.toLowerCase().includes(q) ||
           t.paymentMethod.includes(q) ||
-          (t.customerEmail && t.customerEmail.toLowerCase().includes(q)),
+          (t.memberId && t.memberId.toLowerCase().includes(q)),
       );
     }
 

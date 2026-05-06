@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ProductsService } from '../products/products.service';
 import { TransactionsService } from '../transactions/transactions.service';
+import { MembersService } from '../members/members.service';
 
 export interface CheckoutPayload {
   items: { productId: string; quantity: number; unitPrice: number }[];
@@ -9,8 +10,7 @@ export interface CheckoutPayload {
   discount: number;
   total: number;
   paymentMethod: 'cash' | 'card' | 'wallet';
-  customerEmail?: string;
-  customerPhone?: string;
+  memberId?: string;
 }
 
 @Injectable()
@@ -18,6 +18,7 @@ export class CheckoutService {
   constructor(
     private readonly productsService: ProductsService,
     private readonly transactionsService: TransactionsService,
+    private readonly membersService: MembersService,
   ) {}
 
   processCheckout(payload: CheckoutPayload) {
@@ -58,9 +59,26 @@ export class CheckoutService {
       discount: payload.discount,
       total: payload.total,
       paymentMethod: payload.paymentMethod,
-      customerEmail: payload.customerEmail,
-      customerPhone: payload.customerPhone,
+      memberId: payload.memberId,
     });
+
+    if (payload.memberId) {
+      try {
+        this.membersService.addPurchase(payload.memberId, {
+          transactionId: transaction.id,
+          date: transaction.date,
+          items: transactionItems.map((i) => ({
+            productName: i.productName,
+            sku: i.sku,
+            quantity: i.quantity,
+            total: i.total,
+          })),
+          total: transaction.total,
+        });
+      } catch {
+        // member not found — don't fail the checkout
+      }
+    }
 
     return { success: true, transaction };
   }

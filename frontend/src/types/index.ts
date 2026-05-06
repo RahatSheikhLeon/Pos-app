@@ -34,8 +34,7 @@ export interface Transaction {
   discount: number;
   total: number;
   paymentMethod: 'cash' | 'card' | 'wallet';
-  customerEmail?: string;
-  customerPhone?: string;
+  memberId?: string;
   returned: boolean;
 }
 
@@ -82,6 +81,22 @@ export interface CheckoutPayload {
   discount: number;
   total: number;
   paymentMethod: 'cash' | 'card' | 'wallet';
-  customerEmail?: string;
-  customerPhone?: string;
+  memberId?: string;
+}
+
+export interface PurchaseRecord {
+  transactionId: string;
+  date: string;
+  items: { productName: string; sku: string; quantity: number; total: number }[];
+  total: number;
+}
+
+export interface Member {
+  id: string;
+  membershipId: string;
+  name: string;
+  phone: string;
+  email: string;
+  joinedAt: string;
+  purchaseHistory: PurchaseRecord[];
 }

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Product, Settings, CheckoutPayload } from '../types';
+import { Product, Settings, CheckoutPayload, Member } from '../types';
 
 const http = axios.create({
   baseURL: '/api',
@@ -28,6 +28,15 @@ export const productsApi = {
   update: (id: string, data: Partial<Product>): Promise<Product> =>
     http.put(`/products/${id}`, data),
   remove: (id: string): Promise<void> => http.delete(`/products/${id}`),
+};
+
+export const membersApi = {
+  getAll: (): Promise<Member[]> => http.get('/members'),
+  search: (q: string): Promise<Member[]> => http.get('/members/search', { params: { q } }),
+  getById: (id: string): Promise<Member> => http.get(`/members/${id}`),
+  create: (data: Partial<Member>): Promise<Member> => http.post('/members', data),
+  update: (id: string, data: Partial<Member>): Promise<Member> =>
+    http.put(`/members/${id}`, data),
 };
 
 export const checkoutApi = {

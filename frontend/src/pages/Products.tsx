@@ -5,7 +5,7 @@ import { Search, ShoppingCart, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppDispatch, RootState } from '../store';
 import { fetchProducts, fetchCategories } from '../store/slices/productsSlice';
-import { addToCart } from '../store/slices/cartSlice';
+import { addItem } from '../store/slices/cartSlice';
 import Badge from '../components/ui/Badge';
 import { ProductCardSkeleton } from '../components/ui/Skeleton';
 
@@ -13,7 +13,8 @@ export default function Products() {
   const navigate = useNavigate();
   const dispatch = useDispatch<AppDispatch>();
   const { items, categories, loading } = useSelector((state: RootState) => state.products);
-  const cartItems = useSelector((state: RootState) => state.cart.items);
+  const { carts, activeCartId } = useSelector((state: RootState) => state.cart);
+  const cartItems = carts.find((c) => c.cartId === activeCartId)?.items ?? [];
   const { currencySymbol } = useSelector((state: RootState) => state.settings);
 
   const [search, setSearch] = useState('');
@@ -39,7 +40,7 @@ export default function Products() {
       toast.error(`Only ${product.stock} units available`);
       return;
     }
-    dispatch(addToCart(product));
+    dispatch(addItem(product));
     toast.success(`${product.name} added to cart`);
   };
 
