@@ -26,6 +26,9 @@ import {
   updateQuantity,
   setDiscount,
   clearCart,
+  fetchCarts,
+  syncCart,
+  removeCartFromBackend,
 } from '../store/slices/cartSlice';
 import { fetchProducts } from '../store/slices/productsSlice';
 import { checkoutApi, membersApi } from '../services/api';
@@ -74,6 +77,23 @@ export default function Checkout() {
   useEffect(() => {
     if (products.length === 0) dispatch(fetchProducts());
   }, [dispatch]);
+
+  // On mount: fetch carts from backend as fallback (only applies when localStorage is empty)
+  useEffect(() => {
+    dispatch(fetchCarts());
+  }, [dispatch]);
+
+  // Debounced background sync — push every cart that has items or a customer to the backend
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      carts.forEach((cart) => {
+        if (cart.items.length > 0 || cart.customerId) {
+          dispatch(syncCart(cart));
+        }
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [carts, dispatch]);
 
   // Debounced member search — only reads from API, never mutates state
   useEffect(() => {
@@ -197,6 +217,7 @@ export default function Checkout() {
         memberId: activeCart.customerId,
       });
       dispatch(clearCart(activeCartId));
+      if (activeCartId !== 'default') dispatch(removeCartFromBackend(activeCartId));
       setShowPayment(false);
       setCashGiven('');
       setProductSearch('');
@@ -571,7 +592,11 @@ export default function Checkout() {
                   {cart.cartId !== 'default' && (
                     <span
                       role="button"
-                      onClick={(e) => { e.stopPropagation(); dispatch(removeCart(cart.cartId)); }}
+                      onClick={(e) => {
+                          e.stopPropagation();
+                          dispatch(removeCart(cart.cartId));
+                          dispatch(removeCartFromBackend(cart.cartId));
+                        }}
                       className={`rounded-full p-0.5 transition-colors ${
                         isActive
                           ? 'hover:bg-white/20 text-white/70 hover:text-white'

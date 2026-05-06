@@ -1,5 +1,6 @@
-import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Product } from '../../types';
+import { cartsApi } from '../../services/api';
 
 interface CartItem {
   product: Product;
@@ -17,6 +18,7 @@ export interface Cart {
 interface CartState {
   carts: Cart[];
   activeCartId: string;
+  loading: boolean;
 }
 
 const guestCart = (): Cart => ({
@@ -29,10 +31,30 @@ const guestCart = (): Cart => ({
 const initialState: CartState = {
   carts: [guestCart()],
   activeCartId: 'default',
+  loading: false,
 };
 
-const active = (state: CartState) =>
+const activeCart = (state: CartState) =>
   state.carts.find((c) => c.cartId === state.activeCartId);
+
+// ── Async: fetch carts from backend (fallback when localStorage is empty) ──
+export const fetchCarts = createAsyncThunk('cart/fetchAll', async () => {
+  return await cartsApi.getAll();
+});
+
+// ── Async: background sync — push a cart to backend (fire-and-forget) ──
+export const syncCart = createAsyncThunk('cart/sync', async (cart: Cart) => {
+  return await cartsApi.upsert(cart.cartId, cart);
+});
+
+// ── Async: remove cart from backend ──
+export const removeCartFromBackend = createAsyncThunk(
+  'cart/removeFromBackend',
+  async (cartId: string) => {
+    await cartsApi.remove(cartId);
+    return cartId;
+  }
+);
 
 const cartSlice = createSlice({
   name: 'cart',
@@ -65,18 +87,8 @@ const cartSlice = createSlice({
         state.activeCartId = action.payload;
       }
     },
-    assignCustomer(
-      state,
-      action: PayloadAction<{ customerName: string; customerId?: string }>
-    ) {
-      const cart = active(state);
-      if (cart) {
-        cart.customerName = action.payload.customerName;
-        cart.customerId = action.payload.customerId;
-      }
-    },
     addItem(state, action: PayloadAction<Product>) {
-      const cart = active(state);
+      const cart = activeCart(state);
       if (!cart) return;
       const existing = cart.items.find((i) => i.product.id === action.payload.id);
       if (existing) {
@@ -86,14 +98,11 @@ const cartSlice = createSlice({
       }
     },
     removeItem(state, action: PayloadAction<string>) {
-      const cart = active(state);
+      const cart = activeCart(state);
       if (cart) cart.items = cart.items.filter((i) => i.product.id !== action.payload);
     },
-    updateQuantity(
-      state,
-      action: PayloadAction<{ productId: string; quantity: number }>
-    ) {
-      const cart = active(state);
+    updateQuantity(state, action: PayloadAction<{ productId: string; quantity: number }>) {
+      const cart = activeCart(state);
       if (!cart) return;
       const item = cart.items.find((i) => i.product.id === action.payload.productId);
       if (item) {
@@ -105,7 +114,7 @@ const cartSlice = createSlice({
       }
     },
     setDiscount(state, action: PayloadAction<number>) {
-      const cart = active(state);
+      const cart = activeCart(state);
       if (cart) cart.discount = action.payload;
     },
     clearCart(state, action: PayloadAction<string>) {
@@ -125,13 +134,38 @@ const cartSlice = createSlice({
       }
     },
   },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchCarts.pending, (state) => {
+        state.loading = true;
+      })
+      .addCase(fetchCarts.fulfilled, (state, action) => {
+        state.loading = false;
+        const backendCarts: Cart[] = action.payload ?? [];
+        if (backendCarts.length === 0) return;
+
+        // Only restore from backend if localStorage had nothing (just empty default cart)
+        const isEmptyDefault =
+          state.carts.length === 1 &&
+          state.carts[0].cartId === 'default' &&
+          state.carts[0].items.length === 0 &&
+          !state.carts[0].customerId;
+
+        if (isEmptyDefault) {
+          state.carts = backendCarts;
+          state.activeCartId = backendCarts[0].cartId;
+        }
+      })
+      .addCase(fetchCarts.rejected, (state) => {
+        state.loading = false;
+      });
+  },
 });
 
 export const {
   addCart,
   removeCart,
   switchCart,
-  assignCustomer,
   addItem,
   removeItem,
   updateQuantity,

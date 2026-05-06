@@ -30,6 +30,12 @@ export const productsApi = {
   remove: (id: string): Promise<void> => http.delete(`/products/${id}`),
 };
 
+export const cartsApi = {
+  getAll: (): Promise<any[]> => http.get('/carts'),
+  upsert: (cartId: string, cart: any): Promise<any> => http.put(`/carts/${cartId}`, cart),
+  remove: (cartId: string): Promise<void> => http.delete(`/carts/${cartId}`),
+};
+
 export const membersApi = {
   getAll: (): Promise<Member[]> => http.get('/members'),
   search: (q: string): Promise<Member[]> => http.get('/members/search', { params: { q } }),
