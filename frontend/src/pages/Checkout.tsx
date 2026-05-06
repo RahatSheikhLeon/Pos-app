@@ -438,8 +438,8 @@ export default function Checkout() {
       <div className="lg:w-80 xl:w-96 shrink-0 space-y-4">
 
         {/* Search Profile / New Cart tabs */}
-        <div className="card overflow-hidden">
-          <div className="flex border-b border-gray-100 dark:border-gray-700">
+        <div className="card">
+          <div className="flex border-b border-gray-100 dark:border-gray-700 rounded-t-xl overflow-hidden">
             <button
               onClick={() => setRightTab('finder')}
               className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
@@ -470,7 +470,7 @@ export default function Checkout() {
 
           {/* Search Profile panel */}
           {rightTab === 'finder' && (
-            <div className="p-4">
+            <div className="p-4" >
               <div className="relative">
                 <UserCheck size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
                 <input
@@ -492,7 +492,7 @@ export default function Checkout() {
 
                 {/* Dropdown — shown only when results exist */}
                 {memberResults.length > 0 && (
-                  <div className="absolute top-full mt-1 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl z-50 max-h-56 overflow-y-auto">
+                  <div className="absolute top-full mt-1 left-0 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-xl shadow-xl z-[999] max-h-56 overflow-y-auto">
                     {memberResults.map((m) => {
                       const hasCart = carts.some((c) => c.customerId === m.id);
                       return (
