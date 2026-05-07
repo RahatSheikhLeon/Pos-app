@@ -23,7 +23,7 @@ NestJS API Routes
 RESTful APIs
 Authentication layer (JWT / Session)
 Database
-Recommended: PostgreSQL / MongoDB
+Recommended: MySQL
 4. Layout & Design System
 4.1 Layout Structure
 -----------------------------------------
