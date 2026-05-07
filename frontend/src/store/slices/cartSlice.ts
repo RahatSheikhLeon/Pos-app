@@ -144,16 +144,24 @@ const cartSlice = createSlice({
         const backendCarts: Cart[] = action.payload ?? [];
         if (backendCarts.length === 0) return;
 
-        // Only restore from backend if localStorage had nothing (just empty default cart)
         const isEmptyDefault =
           state.carts.length === 1 &&
           state.carts[0].cartId === 'default' &&
           state.carts[0].items.length === 0 &&
           !state.carts[0].customerId;
 
-        if (isEmptyDefault) {
-          state.carts = backendCarts;
-          state.activeCartId = backendCarts[0].cartId;
+        if (!isEmptyDefault) return; // localStorage has data — never override with backend
+
+        // Only restore member-specific carts (those with a customerId).
+        // The 'default' cart is intentionally excluded so a cleared default cart
+        // can never be resurrected from the backend on reload.
+        const memberCarts = backendCarts.filter((c) => c.customerId && c.cartId !== 'default');
+        if (memberCarts.length > 0) {
+          state.carts = [
+            { cartId: 'default', items: [], customerName: 'Walk-in', discount: 0 },
+            ...memberCarts,
+          ];
+          state.activeCartId = 'default';
         }
       })
       .addCase(fetchCarts.rejected, (state) => {

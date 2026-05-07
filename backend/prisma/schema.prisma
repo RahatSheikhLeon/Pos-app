@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
   provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 model Product {
@@ -44,7 +45,7 @@ model Member {
   name            String
   phone           String @unique
   email           String @default("")
-  joinedAt        String
+  joinedAt        String  @default("")
   purchaseHistory Json   @default("[]")
 
   @@map("members")

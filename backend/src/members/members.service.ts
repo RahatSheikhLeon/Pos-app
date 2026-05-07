@@ -30,7 +30,11 @@ export class MembersService {
 
   async create(data: any) {
     return this.prisma.member.create({
-      data: { ...data, purchaseHistory: [] },
+      data: {
+        ...data,
+        joinedAt: data.joinedAt ?? new Date().toISOString().split('T')[0],
+        purchaseHistory: [],
+      },
     });
   }
 

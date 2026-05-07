@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(DATABASE_URL=\"mysql://root:@localhost:3306/shopiq\" npx prisma migrate dev --name add_joinedAt_default)"
     ]
   }
 }

@@ -217,7 +217,7 @@ export default function Checkout() {
         memberId: activeCart.customerId,
       });
       dispatch(clearCart(activeCartId));
-      if (activeCartId !== 'default') dispatch(removeCartFromBackend(activeCartId));
+      dispatch(removeCartFromBackend(activeCartId)); // always delete from backend, including default cart
       setShowPayment(false);
       setCashGiven('');
       setProductSearch('');
@@ -395,7 +395,7 @@ export default function Checkout() {
             </div>
             {activeCart.items.length > 0 && (
               <button
-                onClick={() => dispatch(clearCart(activeCartId))}
+                onClick={() => { dispatch(clearCart(activeCartId)); dispatch(removeCartFromBackend(activeCartId)); }}
                 className="text-xs text-red-400 hover:text-red-600 transition-colors"
               >
                 Clear
