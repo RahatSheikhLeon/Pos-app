@@ -21,67 +21,62 @@ import { canAccessFeature } from './utils/featureAccess';
 
 function App() {
   const dispatch = useDispatch<AppDispatch>();
-  const { token, user } = useSelector((state: RootState) => state.auth);
+  const { user, checked } = useSelector((state: RootState) => state.auth);
   const theme = useSelector((state: RootState) => state.settings.theme);
+  const plan = user?.plan;
+
+  // Verify auth via cookie (no localStorage token)
+  useEffect(() => {
+    if (!checked) dispatch(fetchProfile());
+  }, [checked, dispatch]);
 
   useEffect(() => {
-    if (token && !user) dispatch(fetchProfile());
-  }, [token, user, dispatch]);
-
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    if (theme === 'dark') document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
   }, [theme]);
 
   useEffect(() => {
-    if (token && user) dispatch(fetchSettings());
-  }, [token, user, dispatch]);
+    if (user && checked) dispatch(fetchSettings());
+  }, [user, checked, dispatch]);
 
-  const plan = user?.plan;
+  // Show nothing while we confirm auth status
+  if (!checked) return null;
+
+  const isAuthenticated = !!user;
 
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={token ? <Navigate to="/dashboard" replace /> : <Login />} />
-        <Route path="/register" element={token ? <Navigate to="/dashboard" replace /> : <Register />} />
+        <Route path="/login"    element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
 
-        <Route path="/" element={token ? <Layout /> : <Navigate to="/login" replace />}>
+        {/* Payment return pages — public, no layout */}
+        <Route path="/payment/success" element={<PaymentReturn type="success" />} />
+        <Route path="/payment/cancel"  element={<PaymentReturn type="failed" />} />
+
+        {/* Protected POS app */}
+        <Route path="/" element={isAuthenticated ? <Layout /> : <Navigate to="/login" replace />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="products" element={<Products />} />
-          <Route path="checkout" element={<Checkout />} />
-          <Route path="inventory" element={<Inventory />} />
-
-          {/* Pro-only full pages — show upgrade wall for free users */}
-          <Route
-            path="transactions"
-            element={
-              <ProBlurGate locked={!canAccessFeature(plan, 'transactions')} feature="transactions" fullPage>
-                <Transactions />
-              </ProBlurGate>
-            }
-          />
-          <Route
-            path="reports"
-            element={
-              <ProBlurGate locked={!canAccessFeature(plan, 'reports')} feature="reports" fullPage>
-                <Reports />
-              </ProBlurGate>
-            }
-          />
-
-          <Route path="settings" element={<Settings />} />
+          <Route path="dashboard"    element={<Dashboard />} />
+          <Route path="products"     element={<Products />} />
+          <Route path="checkout"     element={<Checkout />} />
+          <Route path="inventory"    element={<Inventory />} />
+          <Route path="settings"     element={<Settings />} />
           <Route path="subscription" element={<Subscription />} />
+
+          <Route path="transactions" element={
+            <ProBlurGate locked={!canAccessFeature(plan, 'transactions')} feature="transactions" fullPage>
+              <Transactions />
+            </ProBlurGate>
+          } />
+          <Route path="reports" element={
+            <ProBlurGate locked={!canAccessFeature(plan, 'reports')} feature="reports" fullPage>
+              <Reports />
+            </ProBlurGate>
+          } />
         </Route>
 
-        {/* Payment gateway return pages — outside layout, no auth guard */}
-        <Route path="/payment/success" element={<PaymentReturn type="success" />} />
-        <Route path="/payment/failed"  element={<PaymentReturn type="failed" />} />
-
-        <Route path="*" element={<Navigate to={token ? '/dashboard' : '/login'} replace />} />
+        <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />
       </Routes>
     </BrowserRouter>
   );

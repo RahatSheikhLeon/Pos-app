@@ -1,27 +1,21 @@
 import axios from 'axios';
-import { Product, Settings, CheckoutPayload, Member, SubscriptionPlan, UserSubscription, Payment } from '../types';
-
-const TOKEN_KEY = 'shopiq_token';
+import {
+  Product, Settings, CheckoutPayload, Member,
+  SubscriptionPlan, UserSubscription, Payment,
+} from '../types';
 
 const http = axios.create({
   baseURL: '/api',
   timeout: 10000,
+  withCredentials: true, // send HttpOnly cookies on every request
   headers: { 'Content-Type': 'application/json' },
-});
-
-// Attach JWT on every request
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem(TOKEN_KEY);
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
 });
 
 http.interceptors.response.use(
   (res) => res.data,
   (err) => {
     const message = err.response?.data?.message || 'Request failed';
-    if (err.response?.status === 401) {
-      localStorage.removeItem(TOKEN_KEY);
+    if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
       window.location.href = '/login';
     }
     return Promise.reject(new Error(Array.isArray(message) ? message[0] : message));
@@ -34,6 +28,7 @@ export const authApi = {
     http.post('/auth/register', { email, password, name }),
   login: (email: string, password: string): Promise<any> =>
     http.post('/auth/login', { email, password }),
+  logout: (): Promise<any> => http.post('/auth/logout'),
   profile: (): Promise<any> => http.get('/auth/profile'),
 };
 
@@ -66,7 +61,7 @@ export const cartsApi = {
   remove: (cartId: string): Promise<void> => http.delete(`/carts/${cartId}`),
 };
 
-// ── Checkout ─────────────────────────────────────────────────────
+// ── POS Checkout ─────────────────────────────────────────────────
 export const checkoutApi = {
   process: (data: CheckoutPayload): Promise<any> => http.post('/checkout', data),
 };
@@ -104,13 +99,6 @@ export const devicesApi = {
   remove: (id: string): Promise<void> => http.delete(`/devices/${id}`),
 };
 
-// ── Licenses ─────────────────────────────────────────────────────
-export const licensesApi = {
-  activate: (licenseKey: string): Promise<any> =>
-    http.post('/licenses/activate', { licenseKey }),
-  getMine: (): Promise<any> => http.get('/licenses/mine'),
-};
-
 // ── Subscription Plans ───────────────────────────────────────────
 export const subscriptionPlansApi = {
   getAll: (): Promise<SubscriptionPlan[]> => http.get('/subscription-plans'),
@@ -121,14 +109,19 @@ export const userSubscriptionsApi = {
   getMy: (): Promise<UserSubscription | null> => http.get('/subscriptions/my'),
 };
 
-// ── Payments (single source of truth for subscription transactions) ──
+// ── Stripe Subscription ──────────────────────────────────────────
+export const stripeApi = {
+  getPlans: (): Promise<SubscriptionPlan[]> => http.get('/stripe/plans'),
+  createCheckout: (planId: string, billingCycle: 'monthly' | 'yearly'): Promise<{ sessionUrl: string; sessionId: string }> =>
+    http.post('/stripe/checkout', { planId, billingCycle }),
+  getSubscription: (): Promise<UserSubscription | null> => http.get('/stripe/subscription'),
+  getPaymentStatus: (): Promise<{ exists: boolean; status: string | null; amount: number | null }> =>
+    http.get('/stripe/payment-status'),
+  cancelSubscription: (): Promise<{ success: boolean; message: string }> =>
+    http.delete('/stripe/subscription'),
+};
+
+// ── Legacy payments (keep for existing data) ─────────────────────
 export const paymentsApi = {
-  initiate: (planId: string): Promise<{ payment: Payment; trxId: string; paymentUrl: string | null; successUrl: string; failUrl: string }> =>
-    http.post('/payments/initiate', { planId }),
   getMine: (): Promise<Payment[]> => http.get('/payments/my'),
-  getByTrxId: (trxId: string): Promise<Payment> => http.get(`/payments/trx/${trxId}`),
-  confirmSuccess: (trxId: string): Promise<{ success: boolean }> =>
-    http.post(`/payments/confirm-success?trx_id=${trxId}`),
-  confirmFailed: (trxId: string): Promise<{ success: boolean }> =>
-    http.post(`/payments/confirm-failed?trx_id=${trxId}`),
 };

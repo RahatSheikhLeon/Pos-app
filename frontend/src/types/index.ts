@@ -129,20 +129,29 @@ export interface SubscriptionPlan {
   name: string;
   slug: string;
   price: number;
+  yearlyPrice: number;
   features: string[];
   type: 'free' | 'pro';
   maxDevices: number;
   maxProducts: number;
   maxCustomers: number;
+  stripePriceIdMonthly?: string | null;
+  stripePriceIdYearly?: string | null;
 }
 
 export interface UserSubscription {
   id: string;
   userId: string;
   planId: string;
+  stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
+  stripeSessionId?: string | null;
+  planName: string;
+  billingCycle: string;
   status: string;
-  startedAt: string;
-  expiresAt: string | null;
+  startDate: string;
+  endDate: string | null;
+  createdAt: string;
   plan: SubscriptionPlan;
 }
 

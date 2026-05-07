@@ -176,10 +176,10 @@ const cartSlice = createSlice({
       })
       // ── Sync maxCarts whenever the user's plan is known ──────────────
       .addCase(login.fulfilled, (state, action) => {
-        state.maxCarts = getCartLimit(action.payload.user.plan);
+        state.maxCarts = getCartLimit(action.payload?.plan);
       })
       .addCase(register.fulfilled, (state, action) => {
-        state.maxCarts = getCartLimit(action.payload.user.plan);
+        state.maxCarts = getCartLimit(action.payload?.plan);
       })
       .addCase(fetchProfile.fulfilled, (state, action) => {
         state.maxCarts = getCartLimit(action.payload?.plan);

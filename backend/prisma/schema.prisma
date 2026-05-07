@@ -8,17 +8,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ── Auth ─────────────────────────────────────────────────────────
+// ── Users ─────────────────────────────────────────────────────────
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String   @default("")
-  plan      String   @default("free")
-  status    String   @default("active")
-  isAdmin   Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id               String   @id @default(uuid())
+  email            String   @unique
+  password         String
+  name             String   @default("")
+  plan             String   @default("free")   // mirrors active subscription plan slug
+  status           String   @default("active")
+  isAdmin          Boolean  @default(false)
+  stripeCustomerId String?  @unique            // Stripe customer ID, set on first checkout
+  createdAt        DateTime @default(now())
 
   @@map("users")
 }
@@ -34,57 +35,69 @@ model Device {
   @@map("devices")
 }
 
-// ── Payments ─────────────────────────────────────────────────────
-
-model Payment {
-  id        String   @id @default(uuid())
-  userId    String
-  userEmail String   @default("")
-  planId    String
-  planName  String
-  amount    Float
-  trxId     String   @unique
-  status    String   @default("pending") // pending | success | failed | cancelled
-  gateway   String   @default("manual")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("payments")
-}
-
-// ── Subscription System ───────────────────────────────────────────
+// ── Subscription Plans ────────────────────────────────────────────
 
 model SubscriptionPlan {
-  id           String   @id
-  name         String
-  slug         String   @unique
-  price        Float    @default(0)
-  features     Json     @default("[]")
-  type         String   @default("free")
-  maxDevices   Int      @default(1)
-  maxProducts  Int      @default(50)
-  maxCustomers Int      @default(5)
-  createdAt    DateTime @default(now())
+  id                   String   @id
+  name                 String
+  slug                 String   @unique
+  price                Float    @default(0)    // monthly price USD
+  yearlyPrice          Float    @default(0)    // yearly price USD
+  features             Json     @default("[]")
+  type                 String   @default("free")
+  maxDevices           Int      @default(1)
+  maxProducts          Int      @default(50)
+  maxCustomers         Int      @default(5)
+  stripePriceIdMonthly String?                 // Set in Stripe Dashboard → Products
+  stripePriceIdYearly  String?
+  createdAt            DateTime @default(now())
 
   subscriptions UserSubscription[]
 
   @@map("subscription_plans")
 }
 
-model UserSubscription {
-  id        String    @id @default(uuid())
-  userId    String    @unique
-  planId    String
-  status    String    @default("active")
-  startedAt DateTime  @default(now())
-  expiresAt DateTime?
+// ── Subscriptions ─────────────────────────────────────────────────
 
-  plan SubscriptionPlan @relation(fields: [planId], references: [id])
+model UserSubscription {
+  id                   String    @id @default(uuid())
+  userId               String    @unique
+  planId               String
+  stripeCustomerId     String?
+  stripeSubscriptionId String?   @unique
+  stripeSessionId      String?
+  planName             String    @default("")
+  billingCycle         String    @default("monthly")  // monthly | yearly
+  status               String    @default("active")   // active | cancelled | past_due | expired
+  startDate            DateTime  @default(now())
+  endDate              DateTime?
+  createdAt            DateTime  @default(now())
+
+  plan     SubscriptionPlan @relation(fields: [planId], references: [id])
+  payments Payment[]
 
   @@map("user_subscriptions")
 }
 
-// ── Inventory ────────────────────────────────────────────────────
+// ── Payments ──────────────────────────────────────────────────────
+
+model Payment {
+  id                    String    @id @default(uuid())
+  userId                String    @unique   // one payment record per user at all times
+  subscriptionId        String?
+  amount                Float
+  currency              String    @default("usd")
+  paymentStatus         String    @default("pending")  // pending | completed | failed
+  stripePaymentIntentId String?
+  stripeInvoiceId       String?
+  createdAt             DateTime  @default(now())
+
+  subscription UserSubscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@map("payments")
+}
+
+// ── POS Data ──────────────────────────────────────────────────────
 
 model Product {
   id        String  @id @default(uuid())
@@ -103,8 +116,6 @@ model Product {
   @@map("products")
 }
 
-// ── Customers ────────────────────────────────────────────────────
-
 model Member {
   id              String @id @default(uuid())
   userId          String @default("")
@@ -120,8 +131,6 @@ model Member {
   @@unique([userId, membershipId])
   @@map("members")
 }
-
-// ── Transactions ─────────────────────────────────────────────────
 
 model Transaction {
   id            String  @id @default(uuid())
@@ -140,8 +149,6 @@ model Transaction {
   @@map("transactions")
 }
 
-// ── Cart (DB-only, no localStorage) ─────────────────────────────
-
 model Cart {
   cartId       String  @id
   userId       String  @default("")
@@ -152,8 +159,6 @@ model Cart {
 
   @@map("carts")
 }
-
-// ── Settings ─────────────────────────────────────────────────────
 
 model Settings {
   id             String  @id

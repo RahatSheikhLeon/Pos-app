@@ -3,7 +3,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Bell, Moon, Sun, User, LogOut, Zap } from 'lucide-react';
 import { RootState, AppDispatch } from '../../store';
 import { setTheme } from '../../store/slices/settingsSlice';
-import { logout } from '../../store/slices/authSlice';
+import { logoutUser } from '../../store/slices/authSlice';
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -30,7 +30,7 @@ export default function Header({ sidebarCollapsed }: HeaderProps) {
   const title = pageTitles[location.pathname] || 'ShopIQ';
 
   const handleLogout = () => {
-    dispatch(logout());
+    dispatch(logoutUser());
     navigate('/login', { replace: true });
   };
 

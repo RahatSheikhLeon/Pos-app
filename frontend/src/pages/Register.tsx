@@ -8,7 +8,7 @@ import { AppDispatch, RootState } from '../store';
 export default function Register() {
   const dispatch = useDispatch<AppDispatch>();
   const navigate = useNavigate();
-  const { loading, error, token } = useSelector((state: RootState) => state.auth);
+  const { loading, error, user } = useSelector((state: RootState) => state.auth);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -16,9 +16,9 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    if (token) navigate('/dashboard', { replace: true });
+    if (user) navigate('/dashboard', { replace: true });
     return () => { dispatch(clearError()); };
-  }, [token, navigate, dispatch]);
+  }, [user, navigate, dispatch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

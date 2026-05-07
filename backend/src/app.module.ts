@@ -14,7 +14,7 @@ import { CartsModule } from './carts/carts.module';
 import { DevicesModule } from './devices/devices.module';
 import { SubscriptionPlansModule } from './subscription-plans/subscription-plans.module';
 import { UserSubscriptionsModule } from './user-subscriptions/user-subscriptions.module';
-import { PaymentsModule } from './payments/payments.module';
+import { StripeModule } from './stripe/stripe.module';
 
 @Module({
   imports: [
@@ -31,7 +31,7 @@ import { PaymentsModule } from './payments/payments.module';
     DevicesModule,
     SubscriptionPlansModule,
     UserSubscriptionsModule,
-    PaymentsModule,
+    StripeModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

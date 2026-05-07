@@ -12,7 +12,7 @@ export class UserSubscriptionsService {
     });
 
     // Auto-downgrade to Free when Pro subscription has expired
-    if (sub && sub.planId !== 'plan_free' && sub.expiresAt && sub.expiresAt < new Date()) {
+    if (sub && sub.planId !== 'plan_free' && sub.endDate && sub.endDate < new Date()) {
       await this.prisma.userSubscription.update({
         where: { userId },
         data: { planId: 'plan_free', status: 'expired' },
@@ -46,7 +46,7 @@ export class UserSubscriptionsService {
     await this.prisma.userSubscription.upsert({
       where: { userId },
       create: { userId, planId, status: 'active' },
-      update: { planId, status: 'active', startedAt: new Date(), expiresAt: null },
+      update: { planId, status: 'active', startDate: new Date(), endDate: null },
     });
 
     // Mirror the plan slug to user.plan so the JWT reflects the new access level
