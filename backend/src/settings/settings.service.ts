@@ -1,45 +1,40 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 
-interface Settings {
-  storeName: string;
-  address: string;
-  phone: string;
-  email: string;
-  taxRate: number;
-  currency: string;
-  currencySymbol: string;
-  receiptHeader: string;
-  receiptFooter: string;
-  taxId: string;
-  showLogo: boolean;
-  showTaxId: boolean;
-  theme: 'light' | 'dark';
-}
+const DEFAULTS = {
+  id: 'default',
+  storeName: 'ShopIQ Store',
+  address: '',
+  phone: '',
+  email: '',
+  taxRate: 10,
+  currency: 'USD',
+  currencySymbol: '$',
+  receiptHeader: 'Thank you for shopping with us!',
+  receiptFooter: 'Please come again.',
+  taxId: '',
+  showLogo: true,
+  showTaxId: false,
+  theme: 'light',
+};
 
 @Injectable()
 export class SettingsService {
-  private settings: Settings = {
-    storeName: 'ShopIQ Store',
-    address: '123 Commerce Street, Business District',
-    phone: '+1 (555) 123-4567',
-    email: 'store@shopiq.com',
-    taxRate: 10,
-    currency: 'USD',
-    currencySymbol: '$',
-    receiptHeader: 'Thank you for shopping with us!',
-    receiptFooter: 'Please come again. Visit us at shopiq.com',
-    taxId: 'TAX-123456789',
-    showLogo: true,
-    showTaxId: false,
-    theme: 'light',
-  };
+  constructor(private readonly prisma: PrismaService) {}
 
-  getSettings(): Settings {
-    return { ...this.settings };
+  async getSettings() {
+    let settings = await this.prisma.settings.findUnique({ where: { id: 'default' } });
+    if (!settings) {
+      settings = await this.prisma.settings.create({ data: DEFAULTS });
+    }
+    return settings;
   }
 
-  updateSettings(data: Partial<Settings>): Settings {
-    this.settings = { ...this.settings, ...data };
-    return { ...this.settings };
+  async updateSettings(data: any) {
+    return this.prisma.settings.upsert({
+      where: { id: 'default' },
+      create: { ...DEFAULTS, ...data },
+      update: data,
+    });
   }
 }

@@ -21,37 +21,39 @@ export class CheckoutService {
     private readonly membersService: MembersService,
   ) {}
 
-  processCheckout(payload: CheckoutPayload) {
+  async processCheckout(payload: CheckoutPayload) {
     if (!payload.items || payload.items.length === 0) {
       throw new BadRequestException('Cart is empty');
     }
 
-    for (const item of payload.items) {
-      const product = this.productsService.findOne(item.productId);
-      if (product.stock < item.quantity) {
+    const products = await Promise.all(
+      payload.items.map((item) => this.productsService.findOne(item.productId)),
+    );
+
+    for (let i = 0; i < payload.items.length; i++) {
+      if (products[i].stock < payload.items[i].quantity) {
         throw new BadRequestException(
-          `Insufficient stock for ${product.name}. Available: ${product.stock}`,
+          `Insufficient stock for ${products[i].name}. Available: ${products[i].stock}`,
         );
       }
     }
 
-    const transactionItems = payload.items.map((item) => {
-      const product = this.productsService.findOne(item.productId);
-      return {
-        productId: item.productId,
-        productName: product.name,
-        sku: product.sku,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        total: parseFloat((item.unitPrice * item.quantity).toFixed(2)),
-      };
-    });
+    const transactionItems = payload.items.map((item, i) => ({
+      productId: item.productId,
+      productName: products[i].name,
+      sku: products[i].sku,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      total: parseFloat((item.unitPrice * item.quantity).toFixed(2)),
+    }));
 
-    for (const item of payload.items) {
-      this.productsService.decrementStock(item.productId, item.quantity);
-    }
+    await Promise.all(
+      payload.items.map((item) =>
+        this.productsService.decrementStock(item.productId, item.quantity),
+      ),
+    );
 
-    const transaction = this.transactionsService.create({
+    const transaction = await this.transactionsService.create({
       date: new Date().toISOString(),
       items: transactionItems,
       subtotal: payload.subtotal,
@@ -59,12 +61,12 @@ export class CheckoutService {
       discount: payload.discount,
       total: payload.total,
       paymentMethod: payload.paymentMethod,
-      memberId: payload.memberId,
+      memberId: payload.memberId ?? null,
     });
 
     if (payload.memberId) {
       try {
-        this.membersService.addPurchase(payload.memberId, {
+        await this.membersService.addPurchase(payload.memberId, {
           transactionId: transaction.id,
           date: transaction.date,
           items: transactionItems.map((i) => ({
@@ -75,9 +77,7 @@ export class CheckoutService {
           })),
           total: transaction.total,
         });
-      } catch {
-        // member not found — don't fail the checkout
-      }
+      } catch { /* member not found — don't fail checkout */ }
     }
 
     return { success: true, transaction };

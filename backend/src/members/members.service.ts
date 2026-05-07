@@ -1,70 +1,48 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { v4 as uuid } from 'uuid';
-
-export interface PurchaseRecord {
-  transactionId: string;
-  date: string;
-  items: { productName: string; sku: string; quantity: number; total: number }[];
-  total: number;
-}
-
-export interface Member {
-  id: string;
-  membershipId: string;
-  name: string;
-  phone: string;
-  email: string;
-  joinedAt: string;
-  purchaseHistory: PurchaseRecord[];
-}
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class MembersService {
-  private members: Member[] = [];
+  constructor(private readonly prisma: PrismaService) {}
 
-  findAll(): Member[] {
-    return this.members;
+  async findAll() {
+    return this.prisma.member.findMany({ orderBy: { name: 'asc' } });
   }
 
-  search(q: string): Member[] {
-    if (!q?.trim()) return this.members;
-    const query = q.toLowerCase();
-    return this.members.filter(
-      (m) =>
-        m.membershipId.toLowerCase().includes(query) ||
-        m.name.toLowerCase().includes(query) ||
-        m.phone.includes(query),
-    );
+  async search(q: string) {
+    if (!q?.trim()) return this.prisma.member.findMany();
+    return this.prisma.member.findMany({
+      where: {
+        OR: [
+          { name: { contains: q } },
+          { phone: { contains: q } },
+          { membershipId: { contains: q } },
+        ],
+      },
+    });
   }
 
-  findOne(id: string): Member {
-    const member = this.members.find((m) => m.id === id);
+  async findOne(id: string) {
+    const member = await this.prisma.member.findUnique({ where: { id } });
     if (!member) throw new NotFoundException(`Member ${id} not found`);
     return member;
   }
 
-  create(data: Partial<Member>): Member {
-    const member: Member = {
-      id: uuid(),
-      membershipId: data.membershipId || `MEM-${uuid().slice(0, 6).toUpperCase()}`,
-      name: data.name || '',
-      phone: data.phone || '',
-      email: data.email || '',
-      joinedAt: new Date().toISOString().split('T')[0],
-      purchaseHistory: [],
-    };
-    this.members.push(member);
-    return member;
+  async create(data: any) {
+    return this.prisma.member.create({
+      data: { ...data, purchaseHistory: [] },
+    });
   }
 
-  update(id: string, data: Partial<Member>): Member {
-    const member = this.findOne(id);
-    Object.assign(member, { ...data, id, purchaseHistory: member.purchaseHistory });
-    return member;
+  async update(id: string, data: any) {
+    await this.findOne(id);
+    return this.prisma.member.update({ where: { id }, data });
   }
 
-  addPurchase(memberId: string, record: PurchaseRecord): void {
-    const member = this.findOne(memberId);
-    member.purchaseHistory.unshift(record);
+  async addPurchase(memberId: string, record: any): Promise<void> {
+    const member = await this.prisma.member.findUnique({ where: { id: memberId } });
+    if (!member) throw new NotFoundException(`Member ${memberId} not found`);
+    const history = [(record), ...((member.purchaseHistory as any[]) ?? [])];
+    await this.prisma.member.update({ where: { id: memberId }, data: { purchaseHistory: history } });
   }
 }

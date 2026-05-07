@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Product {
+  id        String  @id @default(uuid())
+  name      String
+  sku       String  @unique
+  barcode   String  @default("")
+  category  String  @default("Uncategorized")
+  sellPrice Float
+  buyPrice  Float   @default(0)
+  stock     Int     @default(0)
+  imageUrl  String  @default("")
+  taxable   Boolean @default(false)
+
+  @@map("products")
+}
+
+model Transaction {
+  id            String  @id @default(uuid())
+  date          String
+  items         Json
+  subtotal      Float
+  tax           Float
+  discount      Float   @default(0)
+  total         Float
+  paymentMethod String
+  memberId      String?
+  status        String  @default("completed")
+  returnedItems Json    @default("[]")
+
+  @@map("transactions")
+}
+
+model Member {
+  id              String @id @default(uuid())
+  membershipId    String @unique
+  name            String
+  phone           String @unique
+  email           String @default("")
+  joinedAt        String
+  purchaseHistory Json   @default("[]")
+
+  @@map("members")
+}
+
+model Cart {
+  cartId       String  @id
+  customerName String  @default("Walk-in")
+  customerId   String?
+  items        Json    @default("[]")
+  discount     Float   @default(0)
+
+  @@map("carts")
+}
+
+model Settings {
+  id             String  @id
+  storeName      String  @default("ShopIQ Store")
+  address        String  @default("")
+  phone          String  @default("")
+  email          String  @default("")
+  taxRate        Float   @default(10)
+  currency       String  @default("USD")
+  currencySymbol String  @default("$")
+  receiptHeader  String  @default("")
+  receiptFooter  String  @default("")
+  taxId          String  @default("")
+  showLogo       Boolean @default(true)
+  showTaxId      Boolean @default(false)
+  theme          String  @default("light")
+
+  @@map("settings")
+}

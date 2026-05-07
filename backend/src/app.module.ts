@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PrismaModule } from './prisma/prisma.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ProductsModule } from './products/products.module';
 import { CheckoutModule } from './checkout/checkout.module';
@@ -10,6 +11,7 @@ import { CartsModule } from './carts/carts.module';
 
 @Module({
   imports: [
+    PrismaModule,
     DashboardModule,
     ProductsModule,
     CheckoutModule,

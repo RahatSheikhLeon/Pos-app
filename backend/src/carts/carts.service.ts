@@ -1,20 +1,23 @@
 import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CartsService {
-  private carts = new Map<string, any>();
+  constructor(private readonly prisma: PrismaService) {}
 
-  findAll(): any[] {
-    return Array.from(this.carts.values());
+  async findAll() {
+    return this.prisma.cart.findMany();
   }
 
-  upsert(cartId: string, data: any): any {
-    const cart = { ...data, cartId };
-    this.carts.set(cartId, cart);
-    return cart;
+  async upsert(cartId: string, data: any) {
+    return this.prisma.cart.upsert({
+      where: { cartId },
+      create: { cartId, ...data },
+      update: data,
+    });
   }
 
-  remove(cartId: string): void {
-    this.carts.delete(cartId);
+  async remove(cartId: string) {
+    try { await this.prisma.cart.delete({ where: { cartId } }); } catch { /* already gone */ }
   }
 }
