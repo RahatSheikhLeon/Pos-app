@@ -108,3 +108,42 @@ export interface Member {
   joinedAt: string;
   purchaseHistory: PurchaseRecord[];
 }
+
+export type PaymentStatus = 'pending' | 'success' | 'failed' | 'cancelled';
+
+export interface Payment {
+  id: string;
+  userId: string;
+  userEmail: string;
+  planId: string;
+  planName: string;
+  amount: number;
+  trxId: string;
+  status: PaymentStatus;
+  gateway: string;
+  createdAt: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  slug: string;
+  price: number;
+  features: string[];
+  type: 'free' | 'pro';
+  maxDevices: number;
+  maxProducts: number;
+  maxCustomers: number;
+}
+
+export interface UserSubscription {
+  id: string;
+  userId: string;
+  planId: string;
+  status: string;
+  startedAt: string;
+  expiresAt: string | null;
+  plan: SubscriptionPlan;
+}
+
+

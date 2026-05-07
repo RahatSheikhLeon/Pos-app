@@ -1,6 +1,8 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Product } from '../../types';
 import { cartsApi } from '../../services/api';
+import { getCartLimit } from '../planLimits';
+import { login, register, fetchProfile, updatePlan } from './authSlice';
 
 interface CartItem {
   product: Product;
@@ -19,6 +21,7 @@ interface CartState {
   carts: Cart[];
   activeCartId: string;
   loading: boolean;
+  maxCarts: number;
 }
 
 const guestCart = (): Cart => ({
@@ -32,6 +35,7 @@ const initialState: CartState = {
   carts: [guestCart()],
   activeCartId: 'default',
   loading: false,
+  maxCarts: 4, // conservative default — updated immediately on auth events
 };
 
 const activeCart = (state: CartState) =>
@@ -60,11 +64,14 @@ const cartSlice = createSlice({
   name: 'cart',
   initialState,
   reducers: {
+    setMaxCarts(state, action: PayloadAction<number>) {
+      state.maxCarts = action.payload;
+    },
     addCart(
       state,
       action: PayloadAction<{ customerName?: string; customerId?: string } | undefined>
     ) {
-      if (state.carts.length >= 4) return;
+      if (state.carts.length >= state.maxCarts) return; // plan-enforced limit
       const cartId = `cart-${Date.now()}`;
       state.carts.push({
         cartId,
@@ -166,11 +173,25 @@ const cartSlice = createSlice({
       })
       .addCase(fetchCarts.rejected, (state) => {
         state.loading = false;
+      })
+      // ── Sync maxCarts whenever the user's plan is known ──────────────
+      .addCase(login.fulfilled, (state, action) => {
+        state.maxCarts = getCartLimit(action.payload.user.plan);
+      })
+      .addCase(register.fulfilled, (state, action) => {
+        state.maxCarts = getCartLimit(action.payload.user.plan);
+      })
+      .addCase(fetchProfile.fulfilled, (state, action) => {
+        state.maxCarts = getCartLimit(action.payload?.plan);
+      })
+      .addCase(updatePlan, (state, action) => {
+        state.maxCarts = getCartLimit(action.payload);
       });
   },
 });
 
 export const {
+  setMaxCarts,
   addCart,
   removeCart,
   switchCart,

@@ -5,19 +5,19 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CartsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
-    return this.prisma.cart.findMany();
+  async findAll(userId: string) {
+    return this.prisma.cart.findMany({ where: { userId } });
   }
 
-  async upsert(cartId: string, data: any) {
+  async upsert(userId: string, cartId: string, data: any) {
     return this.prisma.cart.upsert({
       where: { cartId },
-      create: { cartId, ...data },
+      create: { cartId, userId, ...data },
       update: data,
     });
   }
 
-  async remove(cartId: string) {
-    try { await this.prisma.cart.delete({ where: { cartId } }); } catch { /* already gone */ }
+  async remove(userId: string, cartId: string) {
+    try { await this.prisma.cart.deleteMany({ where: { cartId, userId } }); } catch { }
   }
 }

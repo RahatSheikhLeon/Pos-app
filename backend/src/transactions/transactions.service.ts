@@ -1,14 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-export type TransactionStatus = 'completed' | 'returned' | 'partially_refunded';
-
 @Injectable()
 export class TransactionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(search?: string, dateFrom?: string, dateTo?: string) {
-    const where: any = {};
+  async findAll(userId: string, search?: string, dateFrom?: string, dateTo?: string) {
+    const where: any = { userId };
     if (search?.trim()) where.id = { contains: search.trim() };
     if (dateFrom) where.date = { ...(where.date ?? {}), gte: dateFrom };
     if (dateTo) where.date = { ...(where.date ?? {}), lte: dateTo };
@@ -45,7 +43,7 @@ export class TransactionsService {
       for (const item of txItems) {
         const qty = item.quantity - alreadyQty(item.productId);
         if (qty > 0) {
-          try { await this.prisma.product.update({ where: { id: item.productId }, data: { stock: { increment: qty } } }); } catch { /* product deleted */ }
+          try { await this.prisma.product.update({ where: { id: item.productId }, data: { stock: { increment: qty } } }); } catch { }
         }
       }
       return this.prisma.transaction.update({
@@ -59,16 +57,14 @@ export class TransactionsService {
       const orig = txItems.find((i: any) => i.productId === ri.productId);
       if (!orig) throw new BadRequestException(`Product ${ri.productId} not in transaction`);
       if (alreadyQty(ri.productId) + ri.quantity > orig.quantity) {
-        throw new BadRequestException(
-          `Cannot return ${ri.quantity} of "${orig.productName}" — only ${orig.quantity - alreadyQty(ri.productId)} remaining`,
-        );
+        throw new BadRequestException(`Cannot return ${ri.quantity} of "${orig.productName}"`);
       }
     }
 
     const newReturned = [...returnedItems];
     for (const ri of items) {
       if (ri.quantity <= 0) continue;
-      try { await this.prisma.product.update({ where: { id: ri.productId }, data: { stock: { increment: ri.quantity } } }); } catch { /* product deleted */ }
+      try { await this.prisma.product.update({ where: { id: ri.productId }, data: { stock: { increment: ri.quantity } } }); } catch { }
       const existing = newReturned.find((r: any) => r.productId === ri.productId);
       if (existing) { existing.quantity += ri.quantity; } else { newReturned.push({ productId: ri.productId, quantity: ri.quantity }); }
     }
@@ -84,7 +80,7 @@ export class TransactionsService {
     });
   }
 
-  async getAll() {
-    return this.prisma.transaction.findMany({ orderBy: { date: 'desc' } });
+  async getAll(userId: string) {
+    return this.prisma.transaction.findMany({ where: { userId }, orderBy: { date: 'desc' } });
   }
 }

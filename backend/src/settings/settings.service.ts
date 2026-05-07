@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const DEFAULTS = {
-  id: 'default',
   storeName: 'ShopIQ Store',
   address: '',
   phone: '',
@@ -22,18 +21,18 @@ const DEFAULTS = {
 export class SettingsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getSettings() {
-    let settings = await this.prisma.settings.findUnique({ where: { id: 'default' } });
+  async getSettings(userId: string) {
+    let settings = await this.prisma.settings.findUnique({ where: { id: userId } });
     if (!settings) {
-      settings = await this.prisma.settings.create({ data: DEFAULTS });
+      settings = await this.prisma.settings.create({ data: { id: userId, userId, ...DEFAULTS } });
     }
     return settings;
   }
 
-  async updateSettings(data: any) {
+  async updateSettings(userId: string, data: any) {
     return this.prisma.settings.upsert({
-      where: { id: 'default' },
-      create: { ...DEFAULTS, ...data },
+      where: { id: userId },
+      create: { id: userId, userId, ...DEFAULTS, ...data },
       update: data,
     });
   }

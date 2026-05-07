@@ -5,17 +5,11 @@ import { TransactionsService } from '../transactions/transactions.service';
 export class ReportsService {
   constructor(private readonly transactionsService: TransactionsService) {}
 
-  async getReports(days = 30) {
-    const allTransactions = await this.transactionsService.getAll();
-    const since = new Date();
-    since.setDate(since.getDate() - days);
-
-    const filtered = allTransactions.filter(
-      (t) => t.status !== 'returned' && new Date(t.date) >= since,
-    );
-
+  async getReports(userId: string, days = 30) {
+    const allTransactions = await this.transactionsService.getAll(userId);
+    const since = new Date(); since.setDate(since.getDate() - days);
+    const filtered = allTransactions.filter((t) => t.status !== 'returned' && new Date(t.date) >= since);
     const totalRevenue = parseFloat(filtered.reduce((s, t) => s + t.total, 0).toFixed(2));
-
     return {
       totalRevenue,
       totalTransactions: filtered.length,
@@ -46,8 +40,7 @@ export class ReportsService {
     }
     return Array.from(map.entries()).map(([method, d]) => ({
       method: method.charAt(0).toUpperCase() + method.slice(1),
-      count: d.count,
-      amount: d.amount,
+      count: d.count, amount: d.amount,
     }));
   }
 

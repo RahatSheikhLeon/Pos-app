@@ -1,47 +1,43 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { ProductsService } from './products.service';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('products')
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
   @Get()
-  findAll(@Query('search') search?: string, @Query('category') category?: string) {
-    return this.productsService.findAll(search, category);
+  findAll(
+    @CurrentUser() user: any,
+    @Query('search') search?: string,
+    @Query('category') category?: string,
+  ) {
+    return this.productsService.findAll(user.id, search, category);
   }
 
   @Get('categories')
-  getCategories() {
-    return this.productsService.getCategories();
+  getCategories(@CurrentUser() user: any) {
+    return this.productsService.getCategories(user.id);
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(id);
+  findOne(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.productsService.findOne(user.id, id);
   }
 
   @Post()
-  create(@Body() body: any) {
-    return this.productsService.create(body);
+  create(@CurrentUser() user: any, @Body() body: any) {
+    return this.productsService.create(user.id, user.plan, body);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: any) {
-    return this.productsService.update(id, body);
+  update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: any) {
+    return this.productsService.update(user.id, id, body);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    this.productsService.remove(id);
+  remove(@CurrentUser() user: any, @Param('id') id: string) {
+    this.productsService.remove(user.id, id);
     return { success: true };
   }
 }

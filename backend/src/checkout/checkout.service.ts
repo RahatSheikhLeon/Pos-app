@@ -21,13 +21,13 @@ export class CheckoutService {
     private readonly membersService: MembersService,
   ) {}
 
-  async processCheckout(payload: CheckoutPayload) {
+  async processCheckout(userId: string, payload: CheckoutPayload) {
     if (!payload.items || payload.items.length === 0) {
       throw new BadRequestException('Cart is empty');
     }
 
     const products = await Promise.all(
-      payload.items.map((item) => this.productsService.findOne(item.productId)),
+      payload.items.map((item) => this.productsService.findById(item.productId)),
     );
 
     for (let i = 0; i < payload.items.length; i++) {
@@ -54,6 +54,7 @@ export class CheckoutService {
     );
 
     const transaction = await this.transactionsService.create({
+      userId,
       date: new Date().toISOString(),
       items: transactionItems,
       subtotal: payload.subtotal,
@@ -77,7 +78,7 @@ export class CheckoutService {
           })),
           total: transaction.total,
         });
-      } catch { /* member not found — don't fail checkout */ }
+      } catch { }
     }
 
     return { success: true, transaction };

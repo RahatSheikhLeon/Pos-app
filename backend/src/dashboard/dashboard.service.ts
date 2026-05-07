@@ -9,10 +9,10 @@ export class DashboardService {
     private readonly transactionsService: TransactionsService,
   ) {}
 
-  async getDashboard() {
+  async getDashboard(userId: string) {
     const [allTransactions, lowStockProducts] = await Promise.all([
-      this.transactionsService.getAll(),
-      this.productsService.getLowStock(10),
+      this.transactionsService.getAll(userId),
+      this.productsService.getLowStock(userId, 10),
     ]);
 
     const now = new Date();

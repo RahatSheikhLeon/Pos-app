@@ -28,7 +28,6 @@ export default function Reports() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     setLoading(true);
     reportsApi

@@ -1,18 +1,19 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { MembersService } from './members.service';
+import { CurrentUser } from '../auth/current-user.decorator';
 
 @Controller('members')
 export class MembersController {
   constructor(private readonly membersService: MembersService) {}
 
   @Get()
-  findAll() {
-    return this.membersService.findAll();
+  findAll(@CurrentUser() user: any) {
+    return this.membersService.findAll(user.id);
   }
 
   @Get('search')
-  search(@Query('q') q: string) {
-    return this.membersService.search(q);
+  search(@CurrentUser() user: any, @Query('q') q: string) {
+    return this.membersService.search(user.id, q);
   }
 
   @Get(':id')
@@ -21,12 +22,12 @@ export class MembersController {
   }
 
   @Post()
-  create(@Body() body: any) {
-    return this.membersService.create(body);
+  create(@CurrentUser() user: any, @Body() body: any) {
+    return this.membersService.create(user.id, user.plan, body);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() body: any) {
-    return this.membersService.update(id, body);
+  update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: any) {
+    return this.membersService.update(user.id, id, body);
   }
 }

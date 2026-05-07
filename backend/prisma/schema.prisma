@@ -8,10 +8,89 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ── Auth ─────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String   @default("")
+  plan      String   @default("free")
+  status    String   @default("active")
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("users")
+}
+
+model Device {
+  id          String @id @default(uuid())
+  userId      String
+  fingerprint String
+  name        String @default("Device")
+  lastSeen    String @default("")
+
+  @@unique([userId, fingerprint])
+  @@map("devices")
+}
+
+// ── Payments ─────────────────────────────────────────────────────
+
+model Payment {
+  id        String   @id @default(uuid())
+  userId    String
+  userEmail String   @default("")
+  planId    String
+  planName  String
+  amount    Float
+  trxId     String   @unique
+  status    String   @default("pending") // pending | success | failed | cancelled
+  gateway   String   @default("manual")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("payments")
+}
+
+// ── Subscription System ───────────────────────────────────────────
+
+model SubscriptionPlan {
+  id           String   @id
+  name         String
+  slug         String   @unique
+  price        Float    @default(0)
+  features     Json     @default("[]")
+  type         String   @default("free")
+  maxDevices   Int      @default(1)
+  maxProducts  Int      @default(50)
+  maxCustomers Int      @default(5)
+  createdAt    DateTime @default(now())
+
+  subscriptions UserSubscription[]
+
+  @@map("subscription_plans")
+}
+
+model UserSubscription {
+  id        String    @id @default(uuid())
+  userId    String    @unique
+  planId    String
+  status    String    @default("active")
+  startedAt DateTime  @default(now())
+  expiresAt DateTime?
+
+  plan SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@map("user_subscriptions")
+}
+
+// ── Inventory ────────────────────────────────────────────────────
+
 model Product {
   id        String  @id @default(uuid())
+  userId    String  @default("")
   name      String
-  sku       String  @unique
+  sku       String
   barcode   String  @default("")
   category  String  @default("Uncategorized")
   sellPrice Float
@@ -20,11 +99,33 @@ model Product {
   imageUrl  String  @default("")
   taxable   Boolean @default(false)
 
+  @@unique([userId, sku])
   @@map("products")
 }
 
+// ── Customers ────────────────────────────────────────────────────
+
+model Member {
+  id              String @id @default(uuid())
+  userId          String @default("")
+  membershipId    String
+  name            String
+  phone           String
+  email           String @default("")
+  due             Float  @default(0)
+  joinedAt        String @default("")
+  purchaseHistory Json   @default("[]")
+
+  @@unique([userId, phone])
+  @@unique([userId, membershipId])
+  @@map("members")
+}
+
+// ── Transactions ─────────────────────────────────────────────────
+
 model Transaction {
   id            String  @id @default(uuid())
+  userId        String  @default("")
   date          String
   items         Json
   subtotal      Float
@@ -39,20 +140,11 @@ model Transaction {
   @@map("transactions")
 }
 
-model Member {
-  id              String @id @default(uuid())
-  membershipId    String @unique
-  name            String
-  phone           String @unique
-  email           String @default("")
-  joinedAt        String  @default("")
-  purchaseHistory Json   @default("[]")
-
-  @@map("members")
-}
+// ── Cart (DB-only, no localStorage) ─────────────────────────────
 
 model Cart {
   cartId       String  @id
+  userId       String  @default("")
   customerName String  @default("Walk-in")
   customerId   String?
   items        Json    @default("[]")
@@ -61,8 +153,11 @@ model Cart {
   @@map("carts")
 }
 
+// ── Settings ─────────────────────────────────────────────────────
+
 model Settings {
   id             String  @id
+  userId         String  @default("")
   storeName      String  @default("ShopIQ Store")
   address        String  @default("")
   phone          String  @default("")

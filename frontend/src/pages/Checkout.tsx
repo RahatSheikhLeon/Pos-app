@@ -48,7 +48,8 @@ const emptyForm: CustomerForm = { name: '', phone: '', email: '' };
 
 export default function Checkout() {
   const dispatch = useDispatch<AppDispatch>();
-  const { carts, activeCartId } = useSelector((state: RootState) => state.cart);
+  const { carts, activeCartId, maxCarts } = useSelector((state: RootState) => state.cart);
+  const { user } = useSelector((state: RootState) => state.auth);
   const { items: products } = useSelector((state: RootState) => state.products);
   const { taxRate, currencySymbol } = useSelector((state: RootState) => state.settings);
 
@@ -185,9 +186,13 @@ export default function Checkout() {
       return;
     }
 
-    // Rule 2: enforce 4-cart limit
-    if (carts.length >= 4) {
-      toast.error('Max 4 carts reached — close one first');
+    // Rule 2: enforce plan-based cart limit
+    if (carts.length >= maxCarts) {
+      toast.error(
+        user?.plan === 'free'
+          ? `Free plan allows ${maxCarts} carts. Upgrade to Pro for up to 4.`
+          : 'Max 4 carts reached — close one first'
+      );
       return;
     }
 
@@ -474,18 +479,26 @@ export default function Checkout() {
             </button>
             <button
               onClick={() => {
-                if (carts.length >= 4) {
-                  toast.error('Maximum 4 carts reached');
+                if (carts.length >= maxCarts) {
+                  toast.error(
+                    user?.plan === 'free'
+                      ? `Free plan allows ${maxCarts} carts. Upgrade to Pro for up to 4.`
+                      : 'Max 4 carts reached — close one first'
+                  );
                   return;
                 }
                 dispatch(addCart());
                 setRightTab('finder');
                 toast.success('New cart added');
               }}
-              className="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+              className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+                carts.length >= maxCarts
+                  ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
             >
               <Plus size={14} />
-              New Cart
+              {carts.length >= maxCarts && user?.plan === 'free' ? 'Upgrade for more' : 'New Cart'}
             </button>
           </div>
 
@@ -563,7 +576,7 @@ export default function Checkout() {
         {/* Active carts */}
         <div className="card p-4">
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
-            Active Carts ({carts.length}/4)
+            Active Carts ({carts.length}/{maxCarts})
           </p>
           <div className="flex flex-wrap gap-2">
             {carts.map((cart) => {
