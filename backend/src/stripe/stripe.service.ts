@@ -90,8 +90,11 @@ export class StripeService {
     return this.stripe.subscriptions.cancel(stripeSubscriptionId);
   }
 
-  // Retrieve a Stripe subscription to get current_period_end and billing interval
-  async retrieveSubscription(stripeSubscriptionId: string) {
+  // Retrieve a Stripe subscription to get current_period_end and billing interval.
+  // Explicitly typed as Promise<any>: InstanceType<typeof Stripe> does not expose
+  // the full concrete Stripe.Subscription shape through its method return types,
+  // causing TypeScript to lose fields like current_period_end at the call site.
+  async retrieveSubscription(stripeSubscriptionId: string): Promise<any> {
     return this.stripe.subscriptions.retrieve(stripeSubscriptionId);
   }
 
