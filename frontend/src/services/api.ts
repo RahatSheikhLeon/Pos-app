@@ -68,10 +68,34 @@ export interface CartItemRow {
   product: Product | null;
 }
 
+// Session metadata row — one per cart tab, carries customer identity and discount
+export interface CartSessionRow {
+  id: string;          // = sessionId
+  userId: string;
+  customerId: string | null;
+  customerName: string;
+  discount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Shape returned by GET /api/carts
+export interface CartsResponse {
+  items: CartItemRow[];
+  sessions: CartSessionRow[];
+}
+
 export const cartsApi = {
-  // Fetch all cart items with enriched product data
-  getAll: (): Promise<CartItemRow[]> =>
+  // Fetch all cart items (with product details) + all session metadata
+  getAll: (): Promise<CartsResponse> =>
     http.get('/carts'),
+
+  // Create or update a cart session — persist customer name/ID immediately
+  saveSession: (
+    sessionId: string,
+    data: { customerName?: string; customerId?: string; discount?: number },
+  ): Promise<CartSessionRow> =>
+    http.put(`/carts/sessions/${sessionId}`, data),
 
   // Add or increment a cart item immediately (source of truth: MySQL)
   addItem: (data: {
@@ -90,7 +114,7 @@ export const cartsApi = {
   removeItem: (productId: string, sessionId: string): Promise<void> =>
     http.delete(`/carts/items/${productId}`, { params: { sessionId } }),
 
-  // Delete all items for a session (after checkout or cart close)
+  // Delete all items + session metadata (after checkout or cart close)
   clearSession: (sessionId: string): Promise<void> =>
     http.delete(`/carts/sessions/${sessionId}`),
 };

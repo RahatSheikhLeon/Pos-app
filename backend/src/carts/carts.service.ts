@@ -6,25 +6,55 @@ import { AddCartItemDto, SetItemQtyDto } from './dto/cart-item.dto';
 export class CartsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Return all cart items for user, enriched with current product data
+  // Return both cart items (enriched with product data) and session metadata.
+  // The frontend needs both to rebuild carts with correct customer identity.
   async findAll(userId: string) {
-    const items = await this.prisma.cart.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'asc' },
+    const [items, sessions] = await Promise.all([
+      this.prisma.cart.findMany({
+        where: { userId },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.cartSession.findMany({ where: { userId } }),
+    ]);
+
+    let enrichedItems: any[] = [];
+    if (items.length > 0) {
+      const productIds = [...new Set(items.map((i) => i.productId))];
+      const products = await this.prisma.product.findMany({
+        where: { id: { in: productIds } },
+      });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      enrichedItems = items.map((item) => ({
+        ...item,
+        product: productMap.get(item.productId) ?? null,
+      }));
+    }
+
+    return { items: enrichedItems, sessions };
+  }
+
+  // Upsert session metadata: customer name, customer ID, discount.
+  // Called the moment a cart tab is created — persists even before items are added.
+  async upsertSession(
+    userId: string,
+    sessionId: string,
+    data: { customerName?: string; customerId?: string; discount?: number },
+  ) {
+    return this.prisma.cartSession.upsert({
+      where: { id: sessionId },
+      create: {
+        id: sessionId,
+        userId,
+        customerName: data.customerName ?? 'Walk-in',
+        customerId: data.customerId ?? null,
+        discount: data.discount ?? 0,
+      },
+      update: {
+        customerName: data.customerName ?? 'Walk-in',
+        customerId: data.customerId ?? null,
+        discount: data.discount ?? 0,
+      },
     });
-
-    if (items.length === 0) return [];
-
-    const productIds = [...new Set(items.map((i) => i.productId))];
-    const products = await this.prisma.product.findMany({
-      where: { id: { in: productIds } },
-    });
-    const productMap = new Map(products.map((p) => [p.id, p]));
-
-    return items.map((item) => ({
-      ...item,
-      product: productMap.get(item.productId) ?? null,
-    }));
   }
 
   // Upsert a cart item: increment qty if already exists, insert if new
@@ -85,8 +115,11 @@ export class CartsService {
     await this.prisma.cart.deleteMany({ where: { userId, sessionId, productId } });
   }
 
-  // Remove all items for a given session (used after checkout or cart close)
+  // Remove all items AND session metadata — called on checkout or tab close
   async clearSession(userId: string, sessionId: string) {
-    await this.prisma.cart.deleteMany({ where: { userId, sessionId } });
+    await Promise.all([
+      this.prisma.cart.deleteMany({ where: { userId, sessionId } }),
+      this.prisma.cartSession.deleteMany({ where: { id: sessionId, userId } }),
+    ]);
   }
 }

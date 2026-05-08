@@ -1,19 +1,47 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query } from '@nestjs/common';
+import {
+  Controller, Get, Post, Put, Patch, Delete,
+  Body, Param, Query,
+} from '@nestjs/common';
+import { IsString, IsOptional, IsNumber, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { CartsService } from './carts.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AddCartItemDto, SetItemQtyDto } from './dto/cart-item.dto';
+
+class UpsertSessionDto {
+  @IsOptional() @IsString()
+  customerName?: string;
+
+  @IsOptional() @IsString()
+  customerId?: string;
+
+  @IsOptional() @IsNumber() @Min(0) @Type(() => Number)
+  discount?: number;
+}
 
 @Controller('carts')
 export class CartsController {
   constructor(private readonly cartsService: CartsService) {}
 
-  // GET /api/carts — all items for current user (with product details)
+  // GET /api/carts — items + session metadata for the current user
   @Get()
   findAll(@CurrentUser() user: any) {
     return this.cartsService.findAll(user.id);
   }
 
-  // POST /api/carts/items — add or increment an item immediately
+  // PUT /api/carts/sessions/:sessionId — create or update session metadata
+  // Must be called immediately when a cart tab is opened so customer identity
+  // is written to the DB before any items are added.
+  @Put('sessions/:sessionId')
+  upsertSession(
+    @CurrentUser() user: any,
+    @Param('sessionId') sessionId: string,
+    @Body() dto: UpsertSessionDto,
+  ) {
+    return this.cartsService.upsertSession(user.id, sessionId, dto);
+  }
+
+  // POST /api/carts/items — add or increment an item
   @Post('items')
   addItem(@CurrentUser() user: any, @Body() dto: AddCartItemDto) {
     return this.cartsService.upsertItem(user.id, dto);
@@ -41,7 +69,7 @@ export class CartsController {
     return { success: true };
   }
 
-  // DELETE /api/carts/sessions/:sessionId — clear all items in a session
+  // DELETE /api/carts/sessions/:sessionId — clear items + session metadata
   @Delete('sessions/:sessionId')
   clearSession(@CurrentUser() user: any, @Param('sessionId') sessionId: string) {
     this.cartsService.clearSession(user.id, sessionId);

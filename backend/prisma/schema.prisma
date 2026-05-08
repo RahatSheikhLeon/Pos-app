@@ -150,10 +150,11 @@ model Transaction {
   @@map("transactions")
 }
 
+// One row per product per session — stores cart items
 model Cart {
   id        String   @id @default(uuid())
   userId    String
-  sessionId String   @default("default") // multi-cart tab identifier
+  sessionId String   @default("default")
   productId String
   qty       Int      @default(1)
   price     Float
@@ -164,6 +165,21 @@ model Cart {
   @@unique([userId, sessionId, productId])
   @@index([userId, sessionId])
   @@map("carts")
+}
+
+// One row per session — stores customer identity and discount
+// Survives page reloads and persists even when the cart has no items yet
+model CartSession {
+  id           String   @id
+  userId       String
+  customerId   String?
+  customerName String   @default("Walk-in")
+  discount     Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@map("cart_sessions")
 }
 
 model Settings {

@@ -18,11 +18,10 @@ import {
 import toast from 'react-hot-toast';
 import { AppDispatch, RootState } from '../store';
 import {
-  addCart,
   switchCart,
   setDiscount,
-  setCustomer,
   fetchCarts,
+  createCartWithSession,
   addItemToCart,
   setItemQtyInCart,
   removeItemFromCart,
@@ -182,8 +181,8 @@ export default function Checkout() {
       return;
     }
 
-    // Rule 3: always create a brand-new cart — never mutate default or any existing cart
-    dispatch(addCart({ customerName: m.name, customerId: m.id }));
+    // Rule 3: create a new cart and immediately persist session (customer identity) to DB
+    dispatch(createCartWithSession({ cartId: `cart-${Date.now()}`, customerName: m.name, customerId: m.id }));
     toast.success(`Cart created for ${m.name}`);
     setMemberSearch('');
     setMemberResults([]);
@@ -476,7 +475,7 @@ export default function Checkout() {
                   );
                   return;
                 }
-                dispatch(addCart());
+                dispatch(createCartWithSession({ cartId: `cart-${Date.now()}`, customerName: 'Walk-in' }));
                 setRightTab('finder');
                 toast.success('New cart added');
               }}
