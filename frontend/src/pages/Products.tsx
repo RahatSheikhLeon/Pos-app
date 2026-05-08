@@ -5,7 +5,7 @@ import { Search, ShoppingCart, Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { AppDispatch, RootState } from '../store';
 import { fetchProducts, fetchCategories } from '../store/slices/productsSlice';
-import { addItem } from '../store/slices/cartSlice';
+import { addItemToCart } from '../store/slices/cartSlice';
 import Badge from '../components/ui/Badge';
 import { ProductCardSkeleton } from '../components/ui/Skeleton';
 
@@ -33,15 +33,18 @@ export default function Products() {
 
   const cartCount = cartItems.reduce((sum, i) => sum + i.quantity, 0);
 
-  const handleAddToCart = (product: (typeof items)[0]) => {
+  const handleAddToCart = async (product: (typeof items)[0]) => {
     const inCart = cartItems.find((i) => i.product.id === product.id);
-    const currentQty = inCart?.quantity ?? 0;
-    if (currentQty >= product.stock) {
+    if ((inCart?.quantity ?? 0) >= product.stock) {
       toast.error(`Only ${product.stock} units available`);
       return;
     }
-    dispatch(addItem(product));
-    toast.success(`${product.name} added to cart`);
+    const result = await dispatch(addItemToCart({ product, sessionId: activeCartId }));
+    if (addItemToCart.rejected.match(result)) {
+      toast.error(typeof result.payload === 'string' ? result.payload : 'Failed to add item');
+    } else {
+      toast.success(`${product.name} added to cart`);
+    }
   };
 
   return (

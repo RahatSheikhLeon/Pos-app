@@ -55,10 +55,44 @@ export const membersApi = {
 };
 
 // ── Carts ────────────────────────────────────────────────────────
+export interface CartItemRow {
+  id: string;
+  userId: string;
+  sessionId: string;
+  productId: string;
+  qty: number;
+  price: number;
+  subtotal: number;
+  createdAt: string;
+  updatedAt: string;
+  product: Product | null;
+}
+
 export const cartsApi = {
-  getAll: (): Promise<any[]> => http.get('/carts'),
-  upsert: (cartId: string, cart: any): Promise<any> => http.put(`/carts/${cartId}`, cart),
-  remove: (cartId: string): Promise<void> => http.delete(`/carts/${cartId}`),
+  // Fetch all cart items with enriched product data
+  getAll: (): Promise<CartItemRow[]> =>
+    http.get('/carts'),
+
+  // Add or increment a cart item immediately (source of truth: MySQL)
+  addItem: (data: {
+    productId: string;
+    qty: number;
+    price: number;
+    sessionId: string;
+  }): Promise<CartItemRow> =>
+    http.post('/carts/items', data),
+
+  // Set exact quantity for a cart item (qty=0 removes it on backend)
+  setQty: (productId: string, qty: number, sessionId: string): Promise<CartItemRow | null> =>
+    http.patch(`/carts/items/${productId}`, { qty }, { params: { sessionId } }),
+
+  // Remove a single item from a session
+  removeItem: (productId: string, sessionId: string): Promise<void> =>
+    http.delete(`/carts/items/${productId}`, { params: { sessionId } }),
+
+  // Delete all items for a session (after checkout or cart close)
+  clearSession: (sessionId: string): Promise<void> =>
+    http.delete(`/carts/sessions/${sessionId}`),
 };
 
 // ── POS Checkout ─────────────────────────────────────────────────

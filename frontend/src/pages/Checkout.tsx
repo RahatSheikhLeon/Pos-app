@@ -19,16 +19,14 @@ import toast from 'react-hot-toast';
 import { AppDispatch, RootState } from '../store';
 import {
   addCart,
-  removeCart,
   switchCart,
-  addItem,
-  removeItem,
-  updateQuantity,
   setDiscount,
-  clearCart,
+  setCustomer,
   fetchCarts,
-  syncCart,
-  removeCartFromBackend,
+  addItemToCart,
+  setItemQtyInCart,
+  removeItemFromCart,
+  clearCartSession,
 } from '../store/slices/cartSlice';
 import { fetchProducts } from '../store/slices/productsSlice';
 import { checkoutApi, membersApi } from '../services/api';
@@ -83,18 +81,6 @@ export default function Checkout() {
   useEffect(() => {
     dispatch(fetchCarts());
   }, [dispatch]);
-
-  // Debounced background sync — push every cart that has items or a customer to the backend
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      carts.forEach((cart) => {
-        if (cart.items.length > 0 || cart.customerId) {
-          dispatch(syncCart(cart));
-        }
-      });
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [carts, dispatch]);
 
   // Debounced member search — only reads from API, never mutates state
   useEffect(() => {
@@ -221,8 +207,7 @@ export default function Checkout() {
         paymentMethod,
         memberId: activeCart.customerId,
       });
-      dispatch(clearCart(activeCartId));
-      dispatch(removeCartFromBackend(activeCartId)); // always delete from backend, including default cart
+      dispatch(clearCartSession(activeCartId));
       setShowPayment(false);
       setCashGiven('');
       setProductSearch('');
@@ -264,15 +249,19 @@ export default function Checkout() {
                   key={p.id}
                   disabled={p.stock === 0}
                   className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 text-left transition-colors border-b border-gray-50 dark:border-gray-700/50 last:border-0 disabled:opacity-50"
-                  onClick={() => {
+                  onClick={async () => {
                     const inCart = activeCart.items.find((i) => i.product.id === p.id);
                     if ((inCart?.quantity ?? 0) >= p.stock) {
                       toast.error(`Only ${p.stock} units available`);
                       return;
                     }
-                    dispatch(addItem(p));
-                    setProductSearch('');
-                    toast.success(`${p.name} added`);
+                    const result = await dispatch(addItemToCart({ product: p, sessionId: activeCartId }));
+                    if (addItemToCart.rejected.match(result)) {
+                      toast.error(typeof result.payload === 'string' ? result.payload : 'Failed to add item');
+                    } else {
+                      setProductSearch('');
+                      toast.success(`${p.name} added`);
+                    }
                   }}
                 >
                   <div>
@@ -400,7 +389,7 @@ export default function Checkout() {
             </div>
             {activeCart.items.length > 0 && (
               <button
-                onClick={() => { dispatch(clearCart(activeCartId)); dispatch(removeCartFromBackend(activeCartId)); }}
+                onClick={() => dispatch(clearCartSession(activeCartId))}
                 className="text-xs text-red-400 hover:text-red-600 transition-colors"
               >
                 Clear
@@ -430,14 +419,14 @@ export default function Checkout() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => dispatch(updateQuantity({ productId: product.id, quantity: quantity - 1 }))}
+                      onClick={() => dispatch(setItemQtyInCart({ productId: product.id, qty: quantity - 1, sessionId: activeCartId }))}
                       className="w-6 h-6 rounded-full border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                     >
                       <Minus size={11} />
                     </button>
                     <span className="w-7 text-center text-sm font-medium">{quantity}</span>
                     <button
-                      onClick={() => dispatch(updateQuantity({ productId: product.id, quantity: quantity + 1 }))}
+                      onClick={() => dispatch(setItemQtyInCart({ productId: product.id, qty: quantity + 1, sessionId: activeCartId }))}
                       disabled={quantity >= product.stock}
                       className="w-6 h-6 rounded-full border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 transition-colors"
                     >
@@ -448,7 +437,7 @@ export default function Checkout() {
                     {fmt(product.sellPrice * quantity)}
                   </span>
                   <button
-                    onClick={() => dispatch(removeItem(product.id))}
+                    onClick={() => dispatch(removeItemFromCart({ productId: product.id, sessionId: activeCartId }))}
                     className="text-gray-300 hover:text-red-400 transition-colors"
                   >
                     <Trash2 size={14} />
@@ -607,8 +596,7 @@ export default function Checkout() {
                       role="button"
                       onClick={(e) => {
                           e.stopPropagation();
-                          dispatch(removeCart(cart.cartId));
-                          dispatch(removeCartFromBackend(cart.cartId));
+                          dispatch(clearCartSession(cart.cartId));
                         }}
                       className={`rounded-full p-0.5 transition-colors ${
                         isActive

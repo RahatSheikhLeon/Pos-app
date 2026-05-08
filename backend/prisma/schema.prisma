@@ -150,13 +150,18 @@ model Transaction {
 }
 
 model Cart {
-  cartId       String  @id
-  userId       String  @default("")
-  customerName String  @default("Walk-in")
-  customerId   String?
-  items        Json    @default("[]")
-  discount     Float   @default(0)
+  id        String   @id @default(uuid())
+  userId    String
+  sessionId String   @default("default") // multi-cart tab identifier
+  productId String
+  qty       Int      @default(1)
+  price     Float
+  subtotal  Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
+  @@unique([userId, sessionId, productId])
+  @@index([userId, sessionId])
   @@map("carts")
 }
 
