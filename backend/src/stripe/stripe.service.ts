@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const StripeSDK = require('stripe');
+import Stripe from 'stripe';
 
 function requireStripeKey(): string {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -13,10 +11,10 @@ function requireStripeKey(): string {
 
 @Injectable()
 export class StripeService {
-  private readonly stripe: InstanceType<typeof StripeSDK>;
+  private readonly stripe: InstanceType<typeof Stripe>;
 
   constructor() {
-    this.stripe = new StripeSDK(requireStripeKey(), { apiVersion: '2026-04-22.dahlia' });
+    this.stripe = new Stripe(requireStripeKey(), { apiVersion: '2026-04-22.dahlia' as any });
   }
 
   // Create or retrieve a Stripe Customer for a user
@@ -52,7 +50,7 @@ export class StripeService {
             currency: 'usd',
             product_data: { name: params.planName },
             unit_amount: Math.round(params.amount * 100),
-            recurring: { interval },
+            recurring: { interval: interval as 'day' | 'week' | 'month' | 'year' },
           },
           quantity: 1,
         };
@@ -61,8 +59,20 @@ export class StripeService {
       mode: 'subscription',
       customer: params.customerId,
       line_items: [lineItem],
-      metadata: { trxId: params.trxId, userId: params.userId, planId: params.planId },
-      subscription_data: { metadata: { trxId: params.trxId, userId: params.userId, planId: params.planId } },
+      metadata: {
+        trxId: params.trxId,
+        userId: params.userId,
+        planId: params.planId,
+        billingCycle: params.billingCycle,
+      },
+      subscription_data: {
+        metadata: {
+          trxId: params.trxId,
+          userId: params.userId,
+          planId: params.planId,
+          billingCycle: params.billingCycle,
+        },
+      },
       success_url: params.successUrl,
       cancel_url: params.cancelUrl,
     });
@@ -80,9 +90,20 @@ export class StripeService {
     return this.stripe.subscriptions.cancel(stripeSubscriptionId);
   }
 
+  // Retrieve a Stripe subscription to get current_period_end and billing interval
+  async retrieveSubscription(stripeSubscriptionId: string) {
+    return this.stripe.subscriptions.retrieve(stripeSubscriptionId);
+  }
+
   constructWebhookEvent(rawBody: Buffer, sig: string) {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
-    if (!secret) throw new Error('[Stripe] STRIPE_WEBHOOK_SECRET is not set');
+    if (!secret || secret === 'whsec_') {
+      throw new Error(
+        '[Stripe] STRIPE_WEBHOOK_SECRET is missing or incomplete. ' +
+        'Run: stripe listen --forward-to localhost:3001/api/stripe/webhook ' +
+        'and copy the webhook signing secret into .env',
+      );
+    }
     return this.stripe.webhooks.constructEvent(rawBody, sig, secret);
   }
 }

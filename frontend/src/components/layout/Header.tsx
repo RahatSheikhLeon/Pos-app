@@ -2,7 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import { Bell, Moon, Sun, User, LogOut, Zap } from 'lucide-react';
 import { RootState, AppDispatch } from '../../store';
-import { setTheme } from '../../store/slices/settingsSlice';
+import { setTheme, saveSettings } from '../../store/slices/settingsSlice';
 import { logoutUser } from '../../store/slices/authSlice';
 
 const pageTitles: Record<string, string> = {
@@ -57,7 +57,14 @@ export default function Header({ sidebarCollapsed }: HeaderProps) {
         )}
 
         <button
-          onClick={() => dispatch(setTheme(theme === 'dark' ? 'light' : 'dark'))}
+          onClick={() => {
+            const next = theme === 'dark' ? 'light' : 'dark';
+            // 1. Immediate: update Redux + write to localStorage (no flicker on next reload)
+            dispatch(setTheme(next));
+            // 2. Background: persist to DB so the preference survives storage clears
+            //    and is available across devices. Fire-and-forget — no await needed.
+            dispatch(saveSettings({ theme: next }));
+          }}
           className="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}

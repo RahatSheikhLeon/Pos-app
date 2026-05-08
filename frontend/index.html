@@ -4,6 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ShopIQ — POS System</title>
+    <!--
+      THEME INIT — must run synchronously before any paint.
+      Reads localStorage and adds the Tailwind `dark` class to <html>
+      before the browser renders a single pixel, eliminating the flash.
+    -->
+    <script>
+      (function () {
+        try {
+          var saved = localStorage.getItem('shopiq_theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = saved === 'dark' || saved === 'light' ? saved : (prefersDark ? 'dark' : 'light');
+          if (theme === 'dark') document.documentElement.classList.add('dark');
+        } catch (e) {
+          // localStorage blocked (private browsing extreme mode) — default to light
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
