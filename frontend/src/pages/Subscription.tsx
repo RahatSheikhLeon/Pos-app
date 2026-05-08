@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import {
   Check, Zap, Monitor, ShieldCheck, Loader2,
-  Clock, AlertCircle, Crown,
+  Clock, AlertCircle, Crown, ShoppingCart,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { RootState } from '../store';
@@ -10,25 +10,65 @@ import { stripeApi, subscriptionPlansApi, devicesApi } from '../services/api';
 import { SubscriptionPlan, UserSubscription } from '../types';
 import Modal from '../components/ui/Modal';
 
-// ── Plan card accent colours ──────────────────────────────────────
-const ACCENT: Record<string, { border: string; glow: string; badge: string }> = {
-  plan_free:         { border: 'border-gray-200 dark:border-gray-700', glow: '', badge: '' },
-  plan_pro_basic:    { border: 'border-blue-400',    glow: 'shadow-blue-100 dark:shadow-blue-900/20',    badge: 'bg-blue-500' },
-  plan_pro_standard: { border: 'border-indigo-500',  glow: 'shadow-indigo-100 dark:shadow-indigo-900/20', badge: 'bg-indigo-600' },
-  plan_pro_premium:  { border: 'border-purple-500',  glow: 'shadow-purple-100 dark:shadow-purple-900/20', badge: 'bg-purple-600' },
+// ── Per-plan visual theme ─────────────────────────────────────────
+const THEME: Record<string, {
+  idleBorder:     string;
+  hoverBorder:    string;
+  hoverShadow:    string;
+  selectedBorder: string;
+  selectedShadow: string;
+  selectedRing:   string;
+  badge:          string;
+}> = {
+  plan_free: {
+    idleBorder:     'border-gray-200 dark:border-gray-700',
+    hoverBorder:    'hover:border-gray-400 dark:hover:border-gray-500',
+    hoverShadow:    'hover:shadow-md',
+    selectedBorder: 'border-gray-500 dark:border-gray-400',
+    selectedShadow: 'shadow-xl shadow-gray-200 dark:shadow-gray-900/40',
+    selectedRing:   'ring-2 ring-gray-400 ring-offset-2 dark:ring-offset-gray-900',
+    badge:          'bg-gray-500',
+  },
+  plan_pro_basic: {
+    idleBorder:     'border-blue-200 dark:border-blue-900',
+    hoverBorder:    'hover:border-blue-400 dark:hover:border-blue-500',
+    hoverShadow:    'hover:shadow-lg hover:shadow-blue-100 dark:hover:shadow-blue-900/40',
+    selectedBorder: 'border-blue-500',
+    selectedShadow: 'shadow-2xl shadow-blue-200 dark:shadow-blue-900/50',
+    selectedRing:   'ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-gray-900',
+    badge:          'bg-blue-500',
+  },
+  plan_pro_standard: {
+    idleBorder:     'border-indigo-200 dark:border-indigo-900',
+    hoverBorder:    'hover:border-indigo-500 dark:hover:border-indigo-400',
+    hoverShadow:    'hover:shadow-xl hover:shadow-indigo-100 dark:hover:shadow-indigo-900/40',
+    selectedBorder: 'border-indigo-600',
+    selectedShadow: 'shadow-2xl shadow-indigo-200 dark:shadow-indigo-900/50',
+    selectedRing:   'ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-gray-900',
+    badge:          'bg-indigo-600',
+  },
+  plan_pro_premium: {
+    idleBorder:     'border-purple-200 dark:border-purple-900',
+    hoverBorder:    'hover:border-purple-500 dark:hover:border-purple-400',
+    hoverShadow:    'hover:shadow-xl hover:shadow-purple-100 dark:hover:shadow-purple-900/40',
+    selectedBorder: 'border-purple-600',
+    selectedShadow: 'shadow-2xl shadow-purple-200 dark:shadow-purple-900/50',
+    selectedRing:   'ring-2 ring-purple-500 ring-offset-2 dark:ring-offset-gray-900',
+    badge:          'bg-purple-600',
+  },
 };
 
 export default function Subscription() {
   const { user } = useSelector((state: RootState) => state.auth);
 
-  const [plans, setPlans]             = useState<SubscriptionPlan[]>([]);
+  const [plans, setPlans]               = useState<SubscriptionPlan[]>([]);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
-  const [devices, setDevices]         = useState<any[]>([]);
+  const [devices, setDevices]           = useState<any[]>([]);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [loading, setLoading]         = useState(true);
-  const [initiating, setInitiating]   = useState(false);
+  const [showConfirm, setShowConfirm]   = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [initiating, setInitiating]     = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -50,23 +90,23 @@ export default function Subscription() {
 
   useEffect(() => { loadData(); }, []);
 
-  const activePlanId  = subscription?.planId ?? 'plan_free';
-  const isPro         = user?.plan !== 'free';
-  const isActive      = subscription?.status === 'active';
+  const activePlanId    = subscription?.planId ?? 'plan_free';
+  const isPro           = user?.plan !== 'free';
   const hasPending      = paymentStatus === 'pending';
   const hasCompleted    = paymentStatus === 'completed';
-  // Pending is NOT blocked — user can switch plan by selecting again (backend will update the row)
   const purchaseBlocked = hasCompleted;
 
-  const yearlyDiscount = 20; // % discount for yearly billing
-
+  // Price display: monthly shows /mo rate; yearly shows total annual price
   const displayPrice = (plan: SubscriptionPlan) => {
-    if (plan.price === 0) return { amount: 0, label: 'Free' };
+    if (plan.price === 0) return { main: 'Free', sub: null };
     if (billingCycle === 'yearly') {
-      const yearly = plan.yearlyPrice || plan.price * 12 * (1 - yearlyDiscount / 100);
-      return { amount: +(yearly / 12).toFixed(2), label: `$${(yearly / 12).toFixed(2)}/mo` };
+      const total = plan.yearlyPrice || Math.round(plan.price * 12 * 0.8);
+      return {
+        main: `$${total}`,
+        sub:  `/ year  ·  $${(total / 12).toFixed(0)}/mo`,
+      };
     }
-    return { amount: plan.price, label: `$${plan.price}/mo` };
+    return { main: `$${plan.price}`, sub: '/month' };
   };
 
   const handleCheckout = async () => {
@@ -80,7 +120,6 @@ export default function Subscription() {
       setInitiating(false);
     }
   };
-
 
   const handleRemoveDevice = async (id: string) => {
     try {
@@ -141,7 +180,7 @@ export default function Subscription() {
           <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-2 rounded-xl">
             <AlertCircle size={15} className="text-amber-500 shrink-0" />
             <span className="text-xs text-amber-700 dark:text-amber-400">
-              Upgrade to unlock Transactions, Reports &amp; Hardware
+              Upgrade for more devices, carts, and premium features
             </span>
           </div>
         )}
@@ -172,7 +211,7 @@ export default function Subscription() {
           >
             Yearly
             <span className="text-[10px] bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-full font-bold">
-              -{yearlyDiscount}%
+              Save more
             </span>
           </button>
         </div>
@@ -181,70 +220,99 @@ export default function Subscription() {
       {/* ── Plan Cards ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {plans.map((plan) => {
-          const accent      = ACCENT[plan.id] ?? ACCENT.plan_free;
-          const isCurrent   = plan.id === activePlanId;
-          const isSelected  = selectedPlan?.id === plan.id;
-          const isFree      = plan.type === 'free';
-          const isPopular   = plan.id === 'plan_pro_standard';
-          const price       = displayPrice(plan);
+          const theme      = THEME[plan.id] ?? THEME.plan_free;
+          const isCurrent  = plan.id === activePlanId;
+          const isSelected = selectedPlan?.id === plan.id;
+          const isFree     = plan.type === 'free';
+          const isPopular  = plan.id === 'plan_pro_standard';
+          const price      = displayPrice(plan);
+          const clickable  = !isFree && !isCurrent;
 
           return (
             <div
               key={plan.id}
-              onClick={() => !isFree && !isCurrent && setSelectedPlan(isSelected ? null : plan)}
+              onClick={() => clickable && setSelectedPlan(isSelected ? null : plan)}
               className={[
-                'relative p-5 rounded-2xl border-2 transition-all duration-200',
-                !isFree && !isCurrent ? 'cursor-pointer' : '',
-                isSelected ? `${accent.border} ${accent.glow} shadow-xl bg-white dark:bg-gray-800 scale-[1.02]`
-                  : isCurrent ? 'ring-2 ring-indigo-500 border-indigo-400 bg-white dark:bg-gray-800'
-                  : `${accent.border} bg-white dark:bg-gray-800 hover:shadow-md`,
+                'relative p-5 rounded-2xl border-2 transition-all duration-200 bg-white dark:bg-gray-800',
+                clickable ? 'cursor-pointer' : '',
+
+                // ── selected: strongest state ────────────────────────
+                isSelected
+                  ? `${theme.selectedBorder} ${theme.selectedShadow} ${theme.selectedRing} scale-[1.05] -translate-y-1`
+
+                // ── current plan: indigo ring ────────────────────────
+                : isCurrent
+                  ? 'border-indigo-400 ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-gray-900 shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30'
+
+                // ── idle + hover ─────────────────────────────────────
+                : `${theme.idleBorder} ${theme.hoverBorder} ${theme.hoverShadow} hover:scale-[1.02] hover:-translate-y-0.5`,
               ].join(' ')}
             >
+              {/* Most Popular ribbon */}
               {isPopular && !isCurrent && (
-                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-xs font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-600 px-3 py-1 rounded-full shadow-lg">
+                <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 text-xs font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-600 px-3 py-1 rounded-full shadow-lg whitespace-nowrap">
                   Most Popular
                 </span>
               )}
+
+              {/* Current / Selected badge */}
               {isCurrent && (
                 <span className="absolute top-3 right-3 text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full">
                   Current
                 </span>
               )}
               {isSelected && !isCurrent && (
-                <span className={`absolute top-3 right-3 text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${accent.badge}`}>
+                <span className={`absolute top-3 right-3 text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${theme.badge}`}>
                   Selected
                 </span>
               )}
 
-              <p className="font-bold text-gray-900 dark:text-white">{plan.name}</p>
+              {/* Plan name */}
+              <p className="font-bold text-gray-900 dark:text-white text-sm">{plan.name}</p>
+
+              {/* Price block */}
               <div className="mt-2 mb-4">
                 <span className="text-3xl font-extrabold text-gray-900 dark:text-white">
-                  {price.amount === 0 ? 'Free' : `$${price.amount}`}
+                  {price.main}
                 </span>
-                {price.amount > 0 && (
-                  <span className="text-xs text-gray-400 ml-1">
-                    /mo{billingCycle === 'yearly' ? ' · billed yearly' : ''}
+                {price.sub && (
+                  <span className="text-xs text-gray-400 ml-1 leading-tight">
+                    {price.sub}
                   </span>
                 )}
               </div>
 
+              {/* Feature list */}
               <ul className="space-y-2 text-xs text-gray-500 dark:text-gray-400">
+                {/* Devices */}
                 <li className="flex items-center gap-2">
-                  <Monitor size={11} className="shrink-0" />
-                  {plan.maxDevices} device{plan.maxDevices > 1 ? 's' : ''}
+                  <Monitor size={11} className="shrink-0 text-gray-400" />
+                  <span>
+                    {plan.maxDevices} device{plan.maxDevices > 1 ? 's' : ''}
+                  </span>
                 </li>
+
+                {/* Products */}
                 <li className="flex items-center gap-2">
-                  <Check size={11} className="text-green-500 shrink-0" />
-                  {plan.maxProducts === -1 ? 'Unlimited products' : `${plan.maxProducts} products`}
+                  <Check size={11} className="shrink-0 text-green-500" />
+                  <span>
+                    {plan.maxProducts === -1 ? 'Unlimited products' : `${plan.maxProducts} products`}
+                  </span>
                 </li>
-                <li className="flex items-center gap-2">
-                  <Check size={11} className="text-green-500 shrink-0" />
-                  {plan.maxCustomers === -1 ? 'Unlimited customers' : `${plan.maxCustomers} customers`}
-                </li>
-                {(plan.features as string[]).map((f) => (
+
+                {/* Carts — rendered from features array (first entry) */}
+                {(plan.features as string[]).slice(0, 1).map((f) => (
                   <li key={f} className="flex items-center gap-2">
-                    <Check size={11} className="text-green-500 shrink-0" />
-                    {f}
+                    <ShoppingCart size={11} className="shrink-0 text-indigo-400" />
+                    <span>{f}</span>
+                  </li>
+                ))}
+
+                {/* Remaining features */}
+                {(plan.features as string[]).slice(1).map((f) => (
+                  <li key={f} className="flex items-center gap-2">
+                    <Check size={11} className="shrink-0 text-green-500" />
+                    <span>{f}</span>
                   </li>
                 ))}
               </ul>
@@ -258,12 +326,10 @@ export default function Subscription() {
         <div className="card p-5 flex items-center justify-between gap-4 flex-wrap border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-900/10">
           <div>
             <p className="font-semibold text-gray-900 dark:text-white">
-              {selectedPlan.name} — {displayPrice(selectedPlan).label}
-              {billingCycle === 'yearly' && (
-                <span className="ml-2 text-xs text-green-600 dark:text-green-400 font-normal">
-                  Save {yearlyDiscount}% vs monthly
-                </span>
-              )}
+              {selectedPlan.name} — {displayPrice(selectedPlan).main}
+              <span className="font-normal text-gray-400 text-sm ml-1">
+                {displayPrice(selectedPlan).sub}
+              </span>
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
               Subscription renews automatically · Cancel anytime
@@ -324,7 +390,7 @@ export default function Subscription() {
               {[
                 ['Plan',    selectedPlan.name],
                 ['Billing', billingCycle === 'yearly' ? 'Yearly (billed annually)' : 'Monthly'],
-                ['Price',   displayPrice(selectedPlan).label],
+                ['Price',   `${displayPrice(selectedPlan).main} ${displayPrice(selectedPlan).sub ?? ''}`],
                 ['Devices', String(selectedPlan.maxDevices)],
               ].map(([label, value]) => (
                 <div key={label} className="flex justify-between text-sm">
