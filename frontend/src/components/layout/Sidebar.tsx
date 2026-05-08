@@ -25,8 +25,8 @@ const navItems = [
   { path: '/products',     label: 'Products',     icon: Package,         pro: false },
   { path: '/checkout',     label: 'Checkout',     icon: ShoppingCart,    pro: false },
   { path: '/inventory',    label: 'Inventory',    icon: Boxes,           pro: false },
-  { path: '/transactions', label: 'Transactions', icon: CreditCard,      pro: true  },
-  { path: '/reports',      label: 'Reports',      icon: BarChart2,       pro: true  },
+  { path: '/transactions', label: 'Transactions', icon: CreditCard,      pro: false },
+  { path: '/reports',      label: 'Reports',      icon: BarChart2,       pro: false },
   { path: '/settings',     label: 'Settings',     icon: Settings,        pro: false },
   { path: '/subscription', label: 'Subscription', icon: Crown,           pro: false },
 ];

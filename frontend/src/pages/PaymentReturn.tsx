@@ -3,23 +3,75 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { CheckCircle2, XCircle, Loader2, ArrowRight } from 'lucide-react';
 import { fetchProfile } from '../store/slices/authSlice';
+import { stripeApi } from '../services/api';
 import { AppDispatch } from '../store';
 
 export default function PaymentReturn({ type }: { type: 'success' | 'failed' }) {
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const dispatch = useDispatch<AppDispatch>();
+  const navigate      = useNavigate();
+  const dispatch      = useDispatch<AppDispatch>();
+  const sessionId     = searchParams.get('session_id');
+
   const [status, setStatus] = useState<'loading' | 'done'>('loading');
-  const sessionId = searchParams.get('session_id');
+  const [message, setMessage] = useState('Confirming your subscription…');
 
   useEffect(() => {
     const finalise = async () => {
-      if (type === 'success') {
-        // Refresh user profile — subscription already activated by Stripe webhook
-        await dispatch(fetchProfile());
+      if (type !== 'success') {
+        setStatus('done');
+        return;
       }
+
+      // ── Step 1: wait for the Stripe webhook to fire ─────────────────
+      // The user is redirected here BEFORE checkout.session.completed is
+      // processed. Polling the payment-status endpoint ensures we only
+      // refresh the profile AFTER the webhook has updated users.plan.
+      setMessage('Waiting for payment confirmation…');
+
+      const MAX_POLLS = 12;       // up to ~18 seconds
+      const POLL_INTERVAL = 1500; // ms
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        try {
+          const ps = await stripeApi.getPaymentStatus();
+          if (ps.status === 'completed') {
+            console.log('[PaymentReturn] Payment confirmed by webhook ✅');
+            break;
+          }
+        } catch {
+          // Network error — keep trying
+        }
+
+        // If we have a session ID, also check the per-session endpoint as fallback
+        if (sessionId) {
+          try {
+            const res = await fetch(`/api/stripe/payment-status/${sessionId}`, {
+              credentials: 'include',
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.dbStatus === 'completed' || data.liveStatus?.startsWith('completed')) {
+                console.log('[PaymentReturn] Per-session status confirmed ✅');
+                break;
+              }
+            }
+          } catch {}
+        }
+
+        if (i < MAX_POLLS - 1) {
+          await new Promise<void>((r) => setTimeout(r, POLL_INTERVAL));
+        }
+      }
+
+      // ── Step 2: refresh the user profile with the new plan ──────────
+      // By now the webhook has updated users.plan in the DB, so
+      // fetchProfile() will return the Pro plan slug.
+      setMessage('Activating your plan…');
+      await dispatch(fetchProfile());
+
       setStatus('done');
     };
+
     finalise();
   }, [type, sessionId, dispatch]);
 
@@ -28,7 +80,7 @@ export default function PaymentReturn({ type }: { type: 'success' | 'failed' }) 
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
         <div className="text-center space-y-3">
           <Loader2 size={36} className="text-indigo-400 animate-spin mx-auto" />
-          <p className="text-gray-400">Confirming your subscription…</p>
+          <p className="text-gray-400 text-sm">{message}</p>
         </div>
       </div>
     );

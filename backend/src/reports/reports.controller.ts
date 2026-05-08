@@ -1,9 +1,6 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { PlanGuard } from '../auth/plan.guard';
-
-@UseGuards(PlanGuard)
 
 @Controller('reports')
 export class ReportsController {

@@ -1,9 +1,6 @@
-import { Controller, Get, Post, Param, Query, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
 import { TransactionsService } from './transactions.service';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { PlanGuard } from '../auth/plan.guard';
-
-@UseGuards(PlanGuard)
 
 @Controller('transactions')
 export class TransactionsController {

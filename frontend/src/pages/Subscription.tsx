@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import { useSelector } from 'react-redux';
 import {
   Check, Zap, Monitor, ShieldCheck, Loader2,
-  Clock, AlertCircle, X, Crown,
+  Clock, AlertCircle, Crown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { RootState, AppDispatch } from '../store';
-import { fetchProfile, updatePlan } from '../store/slices/authSlice';
+import { RootState } from '../store';
 import { stripeApi, subscriptionPlansApi, devicesApi } from '../services/api';
 import { SubscriptionPlan, UserSubscription } from '../types';
 import Modal from '../components/ui/Modal';
@@ -20,7 +19,6 @@ const ACCENT: Record<string, { border: string; glow: string; badge: string }> = 
 };
 
 export default function Subscription() {
-  const dispatch = useDispatch<AppDispatch>();
   const { user } = useSelector((state: RootState) => state.auth);
 
   const [plans, setPlans]             = useState<SubscriptionPlan[]>([]);
@@ -29,10 +27,8 @@ export default function Subscription() {
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
-  const [showCancel, setShowCancel]   = useState(false);
   const [loading, setLoading]         = useState(true);
   const [initiating, setInitiating]   = useState(false);
-  const [cancelling, setCancelling]   = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -85,18 +81,6 @@ export default function Subscription() {
     }
   };
 
-  const handleCancelSubscription = async () => {
-    setCancelling(true);
-    try {
-      const res = await stripeApi.cancelSubscription();
-      toast.success(res.message);
-      setShowCancel(false);
-      await loadData();
-      await dispatch(fetchProfile());
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to cancel subscription');
-    } finally { setCancelling(false); }
-  };
 
   const handleRemoveDevice = async (id: string) => {
     try {
@@ -145,14 +129,6 @@ export default function Subscription() {
             </p>
           </div>
         </div>
-        {isPro && isActive && subscription?.stripeSubscriptionId && (
-          <button
-            onClick={() => setShowCancel(true)}
-            className="text-sm text-red-400 hover:text-red-600 border border-red-200 dark:border-red-800 px-4 py-2 rounded-lg transition-colors"
-          >
-            Cancel plan
-          </button>
-        )}
         {hasPending && (
           <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 px-4 py-2 rounded-xl">
             <Clock size={15} className="text-blue-500 shrink-0" />
@@ -386,36 +362,6 @@ export default function Subscription() {
         )}
       </Modal>
 
-      {/* ── Cancel Subscription Modal ────────────────────────────── */}
-      <Modal open={showCancel} onClose={() => !cancelling && setShowCancel(false)}
-        title="Cancel Subscription" size="sm">
-        <div className="space-y-4">
-          <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
-            <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                Cancel at end of billing period?
-              </p>
-              <p className="text-xs text-red-600/80 dark:text-red-400/80 mt-1">
-                You keep Pro access until{' '}
-                {subscription?.endDate
-                  ? new Date(subscription.endDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
-                  : 'end of period'}
-                . After that, your account reverts to Free.
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => setShowCancel(false)} disabled={cancelling}
-              className="btn-secondary flex-1">Keep Plan</button>
-            <button onClick={handleCancelSubscription} disabled={cancelling}
-              className="btn-danger flex-1 flex items-center justify-center gap-2">
-              {cancelling ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-              {cancelling ? 'Cancelling…' : 'Yes, Cancel'}
-            </button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

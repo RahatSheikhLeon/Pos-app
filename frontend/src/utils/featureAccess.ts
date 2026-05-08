@@ -1,6 +1,6 @@
 export type FeatureName = 'transactions' | 'reports' | 'settings_hardware';
 
-const PRO_FEATURES: FeatureName[] = ['transactions', 'reports', 'settings_hardware'];
+const PRO_FEATURES: FeatureName[] = [];
 
 export function canAccessFeature(
   plan: string | null | undefined,

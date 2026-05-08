@@ -5,6 +5,8 @@
   "scripts": {
     "start": "node dist/main",
     "start:dev": "ts-node -r dotenv/config -r tsconfig-paths/register src/main.ts",
+    "start:fresh": "npm run kill:port && npm run start:dev",
+    "kill:port": "lsof -ti:3001 | xargs kill -9 2>/dev/null || true",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "build": "tsc -p tsconfig.build.json"

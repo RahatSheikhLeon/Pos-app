@@ -13,17 +13,14 @@ import Subscription from './pages/Subscription';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import PaymentReturn from './pages/PaymentReturn';
-import ProBlurGate from './components/ui/ProBlurGate';
 import { RootState, AppDispatch } from './store';
 import { fetchSettings } from './store/slices/settingsSlice';
 import { fetchProfile } from './store/slices/authSlice';
-import { canAccessFeature } from './utils/featureAccess';
 
 function App() {
   const dispatch = useDispatch<AppDispatch>();
   const { user, checked } = useSelector((state: RootState) => state.auth);
   const theme = useSelector((state: RootState) => state.settings.theme);
-  const plan = user?.plan;
 
   // Verify auth via cookie (no localStorage token)
   useEffect(() => {
@@ -64,16 +61,8 @@ function App() {
           <Route path="settings"     element={<Settings />} />
           <Route path="subscription" element={<Subscription />} />
 
-          <Route path="transactions" element={
-            <ProBlurGate locked={!canAccessFeature(plan, 'transactions')} feature="transactions" fullPage>
-              <Transactions />
-            </ProBlurGate>
-          } />
-          <Route path="reports" element={
-            <ProBlurGate locked={!canAccessFeature(plan, 'reports')} feature="reports" fullPage>
-              <Reports />
-            </ProBlurGate>
-          } />
+          <Route path="transactions" element={<Transactions />} />
+          <Route path="reports"      element={<Reports />} />
         </Route>
 
         <Route path="*" element={<Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />} />

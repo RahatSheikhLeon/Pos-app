@@ -5,7 +5,6 @@ import toast from 'react-hot-toast';
 import { AppDispatch, RootState } from '../store';
 import { fetchSettings, saveSettings } from '../store/slices/settingsSlice';
 import { Settings as SettingsType } from '../types';
-import ProBlurGate from '../components/ui/ProBlurGate';
 
 const tabs = [
   { id: 'store', label: 'Store Info', icon: Store },
@@ -18,8 +17,6 @@ export default function Settings() {
   const dispatch = useDispatch<AppDispatch>();
   const settings = useSelector((state: RootState) => state.settings);
   const [tab, setTab] = useState('store');
-  const { user } = useSelector((state: RootState) => state.auth);
-  const isPro = user?.plan !== 'free' && user?.plan != null;
   const [form, setForm] = useState<Partial<SettingsType>>({});
   const [saving, setSaving] = useState(false);
 
@@ -79,11 +76,6 @@ export default function Settings() {
           >
             <Icon size={15} />
             {label}
-            {id === 'hardware' && !isPro && (
-              <span className="text-[10px] font-bold tracking-wide bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-full">
-                PRO
-              </span>
-            )}
           </button>
         ))}
       </div>
@@ -224,7 +216,6 @@ export default function Settings() {
 
 
         {tab === 'hardware' && (
-          <ProBlurGate locked={!isPro} feature="settings_hardware">
           <div className="space-y-4">
             <h2 className="font-semibold text-gray-900 dark:text-white mb-4">Hardware</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -251,7 +242,6 @@ export default function Settings() {
               </div>
             ))}
           </div>
-          </ProBlurGate>
         )}
 
         <div className="pt-6 border-t border-gray-100 dark:border-gray-700 mt-6">
