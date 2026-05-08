@@ -39,7 +39,7 @@ export class StripeService {
     stripePriceId?: string;  // use pre-created Price if available
     successUrl: string;
     cancelUrl: string;
-  }) {
+  }): Promise<any> {
     const interval = params.billingCycle === 'yearly' ? 'year' : 'month';
 
     // Build line item — use existing Stripe Price or create inline
@@ -79,15 +79,20 @@ export class StripeService {
   }
 
   // Cancel a Stripe subscription at period end
-  async cancelSubscription(stripeSubscriptionId: string) {
+  async cancelSubscription(stripeSubscriptionId: string): Promise<any> {
     return this.stripe.subscriptions.update(stripeSubscriptionId, {
       cancel_at_period_end: true,
     });
   }
 
   // Immediately cancel a Stripe subscription
-  async cancelSubscriptionImmediately(stripeSubscriptionId: string) {
+  async cancelSubscriptionImmediately(stripeSubscriptionId: string): Promise<any> {
     return this.stripe.subscriptions.cancel(stripeSubscriptionId);
+  }
+
+  // Retrieve a Stripe Checkout Session (used to check payment_status in real time)
+  async retrieveSession(sessionId: string): Promise<any> {
+    return this.stripe.checkout.sessions.retrieve(sessionId);
   }
 
   // Retrieve a Stripe subscription to get current_period_end and billing interval.
@@ -98,7 +103,7 @@ export class StripeService {
     return this.stripe.subscriptions.retrieve(stripeSubscriptionId);
   }
 
-  constructWebhookEvent(rawBody: Buffer, sig: string) {
+  constructWebhookEvent(rawBody: Buffer, sig: string): any {
     const secret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!secret || secret === 'whsec_') {
       throw new Error(

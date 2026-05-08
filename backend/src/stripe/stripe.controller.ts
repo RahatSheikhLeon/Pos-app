@@ -1,6 +1,7 @@
 import {
-  Controller, Post, Get, Delete, Body, Headers, Req, HttpCode, BadRequestException,
+  Controller, Post, Get, Delete, Body, Headers, Req, Res, Param, HttpCode, BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { StripeService } from './stripe.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -127,6 +128,129 @@ export class StripeController {
       status: payment?.paymentStatus ?? null,
       amount: payment?.amount ?? null,
     };
+  }
+
+  // ── GET /stripe/payment-status/:sessionId ────────────────────────
+  // Checks DB first; if still pending falls back to Stripe API for real-time status.
+  // Useful for verifying a specific checkout session without a logged-in user context.
+  @Public()
+  @Get('payment-status/:sessionId')
+  async getPaymentStatusById(@Param('sessionId') sessionId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { stripeSessionId: sessionId },
+    });
+
+    if (!payment) {
+      // Not in DB yet — ask Stripe directly
+      try {
+        const session = await this.stripeService.retrieveSession(sessionId);
+        return {
+          source: 'stripe-api',
+          sessionId,
+          stripeStatus: session.payment_status,
+          dbStatus: null,
+        };
+      } catch {
+        throw new BadRequestException(`Session ${sessionId} not found`);
+      }
+    }
+
+    // If DB says pending, do a live Stripe check to catch any missed webhooks
+    let liveStatus = payment.paymentStatus;
+    if (payment.paymentStatus === 'pending' && payment.stripeSessionId) {
+      try {
+        const session = await this.stripeService.retrieveSession(payment.stripeSessionId);
+        if (session.payment_status === 'paid') {
+          liveStatus = 'completed (stripe-confirmed, webhook pending)';
+        }
+      } catch { /* ignore — DB value is best guess */ }
+    }
+
+    return {
+      source: 'db',
+      sessionId: payment.stripeSessionId,
+      dbStatus: payment.paymentStatus,
+      liveStatus,
+      amount: payment.amount,
+      currency: payment.currency,
+      updatedAt: (payment as any).updatedAt ?? null,
+    };
+  }
+
+  // ── GET /stripe/debug-payments ───────────────────────────────────
+  // @Public() — local debug only. Returns all payments as a live-refresh HTML page.
+  @Public()
+  @Get('debug-payments')
+  async debugPaymentsPage(@Res() res: Response) {
+    const payments = await this.prisma.payment.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    const rows = payments.map((p) => {
+      const badge =
+        p.paymentStatus === 'completed'
+          ? `<span style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:4px">completed</span>`
+          : p.paymentStatus === 'failed'
+          ? `<span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:4px">failed</span>`
+          : `<span style="background:#d97706;color:#fff;padding:2px 8px;border-radius:4px">pending</span>`;
+
+      return `<tr>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;font-size:12px;font-family:monospace">${p.id.slice(0, 8)}…</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb">${badge}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb">$${p.amount} ${p.currency?.toUpperCase()}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;font-size:11px;font-family:monospace">${p.stripeSessionId ?? '—'}</td>
+        <td style="padding:8px;border-bottom:1px solid #e5e7eb;font-size:11px">${new Date(p.createdAt).toLocaleTimeString()}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>ShopIQ · Payment Debug</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f9fafb; margin: 0; padding: 24px; }
+    h1   { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    p    { color: #6b7280; font-size: 13px; margin-bottom: 16px; }
+    table{ width: 100%; border-collapse: collapse; background: #fff;
+           border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px #0001; }
+    th   { background: #f3f4f6; text-align: left; padding: 10px 8px;
+           font-size: 12px; font-weight: 600; color: #374151; border-bottom: 2px solid #e5e7eb; }
+    #ts  { font-size: 12px; color: #9ca3af; margin-top: 12px; }
+    .hint{ background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px;
+           padding:10px 14px; font-size:13px; margin-bottom:16px; }
+    code { background:#f3f4f6; padding:1px 4px; border-radius:3px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <h1>💳 ShopIQ Payment Debug</h1>
+  <p>Auto-refreshes every 2 seconds. Last updated: <span id="ts">—</span></p>
+
+  <div class="hint">
+    <strong>Test card:</strong> <code>4242 4242 4242 4242</code> &nbsp;|&nbsp;
+    Expiry: <code>12/26</code> &nbsp;|&nbsp; CVC: <code>123</code><br/>
+    Watch <em>pending → completed</em> below after completing checkout.
+  </div>
+
+  <table id="tbl">
+    <thead><tr>
+      <th>Payment ID</th><th>Status</th><th>Amount</th>
+      <th>Stripe Session ID</th><th>Created</th>
+    </tr></thead>
+    <tbody>${rows || '<tr><td colspan="5" style="padding:16px;text-align:center;color:#9ca3af">No payments yet</td></tr>'}</tbody>
+  </table>
+
+  <script>
+    document.getElementById('ts').textContent = new Date().toLocaleTimeString();
+    setInterval(() => location.reload(), 2000);
+  </script>
+</body>
+</html>`;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
   }
 
   // ── DELETE /stripe/subscription ──────────────────────────────────
