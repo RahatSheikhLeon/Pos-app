@@ -82,17 +82,24 @@ export class AuthService {
   }
 
   /**
-   * Returns the user's EFFECTIVE plan from the JWT (not always the DB plan).
-   * This ensures over-limit devices consistently see 'free' across all page loads
-   * without an additional device-count DB query on every request.
+   * Always returns users.plan from the database — never from the JWT.
+   *
+   * The JWT plan is a snapshot from login time. After a Stripe webhook upgrades
+   * users.plan, the JWT still holds the old value. Reading from the DB on every
+   * fetchProfile() call means plan upgrades are visible immediately — no re-login
+   * or cookie refresh required.
+   *
+   * Device-limit enforcement (over-limit device gets effective plan 'free') is
+   * applied at LOGIN time when the JWT is issued. It does not need to be replayed
+   * on every profile fetch; the login flow re-checks limits on each new session.
    */
-  async getProfile(userId: string, jwtPlan: string) {
+  async getProfile(userId: string, _jwtPlan: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, email: true, name: true, plan: true, status: true, isAdmin: true, createdAt: true },
     });
     if (!user) return null;
-    return { ...user, plan: jwtPlan };
+    return user; // plan always comes from DB — single source of truth
   }
 
   private setAuthCookie(res: Response, user: any) {

@@ -5,11 +5,13 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { DevicesModule } from '../devices/devices.module';
+import { EmailModule }   from '../email/email.module';
 
 @Module({
   imports: [
     PassportModule,
-    DevicesModule,   // provides DevicesService → injected into AuthService
+    DevicesModule,
+    EmailModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'shopiq_secret_key',
       signOptions: { expiresIn: '7d' },

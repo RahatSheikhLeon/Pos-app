@@ -369,6 +369,18 @@ export class StripeController {
     let planId: string | undefined  = meta.planId;
     let billingCycle: 'monthly' | 'yearly' = meta.billingCycle === 'yearly' ? 'yearly' : 'monthly';
 
+    // Validate that the userId from metadata actually exists in the DB.
+    // If the checkout was created under a different account or environment,
+    // the metadata userId may refer to a user that no longer exists — in that
+    // case we must fall through to the stripeCustomerId lookup below.
+    if (userId) {
+      const userExists = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!userExists) {
+        console.warn(`[Webhook:checkout] metadata.userId ${userId} not found in DB — falling back to stripeCustomerId`);
+        userId = undefined;
+      }
+    }
+
     // Lookup #1: payment row already has this sessionId (stored at checkout creation)
     if (!userId && existingPayment) {
       userId = existingPayment.userId;
@@ -447,6 +459,18 @@ export class StripeController {
     }
 
     // ── WRITE: subscription ────────────────────────────────────────
+    // Guard: if another user's subscription row holds this stripeSubscriptionId
+    // (orphaned record from a previous failed/misdirected webhook), delete it first
+    // so the unique constraint doesn't block the upsert below.
+    if (data.subscription) {
+      await this.prisma.userSubscription.deleteMany({
+        where: {
+          stripeSubscriptionId: data.subscription,
+          NOT: { userId },                             // only delete if it belongs to a different user
+        },
+      });
+    }
+
     await this.prisma.userSubscription.upsert({
       where: { userId },
       create: {
