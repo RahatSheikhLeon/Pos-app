@@ -101,7 +101,7 @@ export default function Products() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {items.map((product) => (
             <div key={product.id} className="card p-4 flex flex-col">
-              <div className="h-36 bg-gray-100 dark:bg-gray-700 rounded-lg mb-3 overflow-hidden flex items-center justify-center">
+              <div className="aspect-square w-full bg-gray-100 dark:bg-gray-700 rounded-lg mb-3 overflow-hidden flex items-center justify-center">
                 {product.imageUrl ? (
                   <img
                     src={product.imageUrl}

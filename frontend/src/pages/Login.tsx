@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import { Zap, Eye, EyeOff } from 'lucide-react';
 import { login, clearError } from '../store/slices/authSlice';
+import { getDeviceId } from '../utils/deviceId';
 import { AppDispatch, RootState } from '../store';
 
 export default function Login() {
@@ -21,7 +22,7 @@ export default function Login() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    dispatch(login({ email, password }));
+    dispatch(login({ email, password, fingerprint: getDeviceId() }));
   };
 
   return (

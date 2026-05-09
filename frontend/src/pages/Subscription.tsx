@@ -90,11 +90,31 @@ export default function Subscription() {
 
   useEffect(() => { loadData(); }, []);
 
-  const activePlanId    = subscription?.planId ?? 'plan_free';
-  const isPro           = user?.plan !== 'free';
-  const hasPending      = paymentStatus === 'pending';
-  const hasCompleted    = paymentStatus === 'completed';
-  const purchaseBlocked = hasCompleted;
+  const activePlanId = subscription?.planId ?? 'plan_free';
+  const isPro        = user?.plan !== 'free';
+  const hasPending   = paymentStatus === 'pending';
+  const hasCompleted = paymentStatus === 'completed';
+
+  // This device is over the plan's device limit:
+  //   • user.plan === 'free' (effective plan from JWT)
+  //   • BUT they have an active non-free subscription in the DB
+  // → this device lost Pro access; existing authorised devices are unaffected.
+  const isOverDeviceLimit =
+    user?.plan === 'free' &&
+    subscription?.status === 'active' &&
+    subscription?.planId !== 'plan_free';
+
+  // True when the user has a paid plan that has NOT yet expired.
+  // While this is true, no other plan card can be selected.
+  const hasActivePaidPlan =
+    subscription?.status === 'active' &&
+    subscription?.planId !== 'plan_free' &&
+    (!subscription?.endDate || new Date(subscription.endDate) > new Date()) &&
+    !isOverDeviceLimit; // over-limit devices may still select a higher tier
+
+  // Block purchasing only when already subscribed AND not in over-device-limit state
+  // (over-limit users should be able to upgrade to a higher-tier plan)
+  const purchaseBlocked = hasCompleted && !isOverDeviceLimit;
 
   // Price display: monthly shows /mo rate; yearly shows total annual price
   const displayPrice = (plan: SubscriptionPlan) => {
@@ -176,7 +196,18 @@ export default function Subscription() {
             </span>
           </div>
         )}
-        {!isPro && !hasPending && (
+        {isOverDeviceLimit && (
+          <div className="flex items-start gap-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 px-4 py-3 rounded-xl max-w-sm">
+            <Monitor size={15} className="text-red-500 shrink-0 mt-0.5" />
+            <span className="text-xs text-red-700 dark:text-red-400">
+              <strong>Device limit reached.</strong> Your{' '}
+              {subscription?.plan?.name} plan is active on other devices. Remove
+              an existing device below to grant Pro access here, or upgrade to a
+              higher-tier plan.
+            </span>
+          </div>
+        )}
+        {!isPro && !hasPending && !isOverDeviceLimit && (
           <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 px-4 py-2 rounded-xl">
             <AlertCircle size={15} className="text-amber-500 shrink-0" />
             <span className="text-xs text-amber-700 dark:text-amber-400">
@@ -226,15 +257,19 @@ export default function Subscription() {
           const isFree     = plan.type === 'free';
           const isPopular  = plan.id === 'plan_pro_standard';
           const price      = displayPrice(plan);
-          const clickable  = !isFree && !isCurrent;
+          // Not clickable when: free plan, current plan, OR an active paid plan is in force
+          const clickable  = !isFree && !isCurrent && !hasActivePaidPlan;
+          const isLocked   = !isFree && !isCurrent && hasActivePaidPlan;
 
           return (
             <div
               key={plan.id}
               onClick={() => clickable && setSelectedPlan(isSelected ? null : plan)}
+              title={isLocked ? `Available after your current plan expires on ${subscription?.endDate ? new Date(subscription.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'renewal date'}` : undefined}
               className={[
                 'relative p-5 rounded-2xl border-2 transition-all duration-200 bg-white dark:bg-gray-800',
                 clickable ? 'cursor-pointer' : '',
+                isLocked  ? 'cursor-not-allowed opacity-50 select-none' : '',
 
                 // ── selected: strongest state ────────────────────────
                 isSelected
@@ -245,7 +280,7 @@ export default function Subscription() {
                   ? 'border-indigo-400 ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-gray-900 shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30'
 
                 // ── idle + hover ─────────────────────────────────────
-                : `${theme.idleBorder} ${theme.hoverBorder} ${theme.hoverShadow} hover:scale-[1.02] hover:-translate-y-0.5`,
+                : `${theme.idleBorder} ${!isLocked ? `${theme.hoverBorder} ${theme.hoverShadow} hover:scale-[1.02] hover:-translate-y-0.5` : ''}`,
               ].join(' ')}
             >
               {/* Most Popular ribbon */}
@@ -358,7 +393,15 @@ export default function Subscription() {
         <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
           <h2 className="font-semibold text-gray-900 dark:text-white text-sm flex items-center gap-2">
             <Monitor size={15} className="text-gray-400" />
-            Active Devices ({devices.length})
+            Active Devices ({devices.length}
+            {subscription?.plan?.maxDevices
+              ? ` / ${subscription.plan.maxDevices}`
+              : ''})
+            {isOverDeviceLimit && (
+              <span className="ml-1 text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full">
+                Limit reached
+              </span>
+            )}
           </h2>
         </div>
         {devices.length === 0 ? (

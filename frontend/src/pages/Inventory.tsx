@@ -247,15 +247,44 @@ export default function Inventory() {
           </div>
           <div>
             <label className="label">Stock</label>
-            <input className="input" type="number"  {...field('stock')} />
+            <input
+              className="input"
+              type="number"
+              placeholder="0"
+              value={form.stock || ''}
+              onChange={(e) => {
+                const n = e.target.value === '' ? 0 : Math.max(0, parseInt(e.target.value, 10) || 0);
+                setForm((f) => ({ ...f, stock: n }));
+              }}
+            />
           </div>
           <div>
             <label className="label">Sell Price ({currencySymbol})</label>
-            <input className="input" type="number"  step="0.01" {...field('sellPrice')} />
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={form.sellPrice || ''}
+              onChange={(e) => {
+                const n = e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0);
+                setForm((f) => ({ ...f, sellPrice: n }));
+              }}
+            />
           </div>
           <div>
             <label className="label">Buy Price ({currencySymbol})</label>
-            <input className="input" type="number"  step="0.01" {...field('buyPrice')} />
+            <input
+              className="input"
+              type="number"
+              step="0.01"
+              placeholder="0.00"
+              value={form.buyPrice || ''}
+              onChange={(e) => {
+                const n = e.target.value === '' ? 0 : Math.max(0, parseFloat(e.target.value) || 0);
+                setForm((f) => ({ ...f, buyPrice: n }));
+              }}
+            />
           </div>
           <div className="col-span-2">
             <label className="label">Image URL</label>

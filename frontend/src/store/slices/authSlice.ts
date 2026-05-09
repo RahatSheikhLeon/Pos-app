@@ -28,15 +28,15 @@ const initialState: AuthState = {
 
 export const login = createAsyncThunk(
   'auth/login',
-  async (creds: { email: string; password: string }) => {
-    return await authApi.login(creds.email, creds.password);
+  async (creds: { email: string; password: string; fingerprint?: string }) => {
+    return await authApi.login(creds.email, creds.password, creds.fingerprint);
   }
 );
 
 export const register = createAsyncThunk(
   'auth/register',
-  async (data: { email: string; password: string; name: string }) => {
-    return await authApi.register(data.email, data.password, data.name);
+  async (data: { email: string; password: string; name: string; fingerprint?: string }) => {
+    return await authApi.register(data.email, data.password, data.name, data.fingerprint);
   }
 );
 

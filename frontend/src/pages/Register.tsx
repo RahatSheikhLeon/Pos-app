@@ -4,6 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Zap, Eye, EyeOff } from 'lucide-react';
 import { register, clearError } from '../store/slices/authSlice';
 import { AppDispatch, RootState } from '../store';
+import { getDeviceId } from '../utils/deviceId';
 
 export default function Register() {
   const dispatch = useDispatch<AppDispatch>();
@@ -22,7 +23,7 @@ export default function Register() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    dispatch(register({ name, email, password }));
+    dispatch(register({ name, email, password, fingerprint: getDeviceId() }));
   };
 
   return (

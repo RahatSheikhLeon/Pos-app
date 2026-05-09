@@ -4,10 +4,12 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { DevicesModule } from '../devices/devices.module';
 
 @Module({
   imports: [
     PassportModule,
+    DevicesModule,   // provides DevicesService → injected into AuthService
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'shopiq_secret_key',
       signOptions: { expiresIn: '7d' },
