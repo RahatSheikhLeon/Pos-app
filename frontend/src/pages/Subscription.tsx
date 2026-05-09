@@ -252,14 +252,24 @@ export default function Subscription() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {plans.map((plan) => {
           const theme      = THEME[plan.id] ?? THEME.plan_free;
-          const isCurrent  = plan.id === activePlanId;
-          const isSelected = selectedPlan?.id === plan.id;
           const isFree     = plan.type === 'free';
           const isPopular  = plan.id === 'plan_pro_standard';
+
+          // Both plan tier AND billing cycle must match the purchased subscription
+          const isCurrent    = plan.id === activePlanId &&
+                               (subscription?.billingCycle ?? 'monthly') === billingCycle;
+          // Same tier but viewing the other billing cycle (e.g. bought Monthly, viewing Yearly tab)
+          const isActiveTier = plan.id === activePlanId &&
+                               !isFree &&
+                               !isCurrent &&
+                               subscription?.planId !== 'plan_free';
+
+          const isSelected = selectedPlan?.id === plan.id;
           const price      = displayPrice(plan);
-          // Not clickable when: free plan, current plan, OR an active paid plan is in force
-          const clickable  = !isFree && !isCurrent && !hasActivePaidPlan;
-          const isLocked   = !isFree && !isCurrent && hasActivePaidPlan;
+          // Clickable only when: not free, not the exact current plan, not the same tier viewed
+          // in the alternate cycle, and no active paid plan forcing a lock
+          const clickable  = !isFree && !isCurrent && !isActiveTier && !hasActivePaidPlan;
+          const isLocked   = !isFree && !isCurrent && !isActiveTier && hasActivePaidPlan;
 
           return (
             <div
@@ -290,10 +300,15 @@ export default function Subscription() {
                 </span>
               )}
 
-              {/* Current / Selected badge */}
+              {/* Current / Active-other-cycle / Selected badge */}
               {isCurrent && (
                 <span className="absolute top-3 right-3 text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full">
                   Current
+                </span>
+              )}
+              {isActiveTier && (
+                <span className="absolute top-3 right-3 text-[10px] font-bold bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-2 py-0.5 rounded-full whitespace-nowrap">
+                  Active ({subscription?.billingCycle === 'monthly' ? 'Monthly' : 'Yearly'})
                 </span>
               )}
               {isSelected && !isCurrent && (
