@@ -11,14 +11,37 @@ const http = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Paths where a 401 should NOT trigger a redirect to /login.
+// These are public pages where unauthenticated state is expected.
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password'];
+
+let _redirectingToLogin = false; // guard against multiple concurrent redirects
+
 http.interceptors.response.use(
   (res) => res.data,
   (err) => {
     const message = err.response?.data?.message || 'Request failed';
-    const path = window.location.pathname;
-    if (err.response?.status === 401 && !path.includes('/login') && !path.includes('/register')) {
-      window.location.href = '/login';
+
+    if (err.response?.status === 401) {
+      const path = window.location.pathname;
+      const isPublic = PUBLIC_PATHS.some((p) => path.startsWith(p));
+
+      if (!isPublic && !_redirectingToLogin) {
+        _redirectingToLogin = true;
+
+        // Call the public logout endpoint to clear the stale httpOnly cookie
+        // before navigating to login. This prevents the 401 loop caused by
+        // old or invalidated JWTs (e.g. issued before per-device sessions were
+        // deployed, or after a password change cleared all device sessions).
+        http.post('/auth/logout')
+          .catch(() => { /* ignore — we're clearing state regardless */ })
+          .finally(() => {
+            _redirectingToLogin = false;
+            window.location.href = '/login';
+          });
+      }
     }
+
     return Promise.reject(new Error(Array.isArray(message) ? message[0] : message));
   }
 );

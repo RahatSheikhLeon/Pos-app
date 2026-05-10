@@ -52,8 +52,16 @@ export class DevicesService {
     const count = await this.prisma.device.count({ where: { userId } });
 
     if (count >= limit) {
-      console.log(`[Devices] Over limit for user ${userId}: ${count}/${limit}. effectivePlan → free`);
-      return { effectivePlan: 'free', limitReached: true, deviceId: null, sessionId: null };
+      // Device is over the plan limit — register it anyway so the user gets a
+      // valid JWT (deviceId + sessionId). Without a valid JWT, the user cannot
+      // reach the /device-limit page to remove a device or purchase extra slots.
+      // The over-limit device receives 'free'-tier access; limitReached signals
+      // the frontend to redirect to /device-limit for slot management.
+      const device = await this.prisma.device.create({
+        data: { userId, fingerprint, name: 'Browser', lastSeen: new Date().toISOString(), sessionId: newSessionId },
+      });
+      console.log(`[Devices] Over limit for user ${userId}: ${count}/${limit}. Registered device ${device.id} with free-tier access.`);
+      return { effectivePlan: 'free', limitReached: true, deviceId: device.id, sessionId: newSessionId };
     }
 
     const device = await this.prisma.device.create({

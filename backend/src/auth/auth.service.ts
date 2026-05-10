@@ -166,7 +166,7 @@ export class AuthService {
     return { ...this.buildUserResponse({ ...user, plan: effectivePlan }), deviceLimitReached: limitReached };
   }
 
-  // ── Re-check device limit after slot purchase ──────────────────────
+  // ── Re-check device limit after slot purchase or device removal ────
   async recheckDeviceLimit(userId: string, fingerprint: string, res: Response) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
@@ -175,7 +175,14 @@ export class AuthService {
       user.id, fingerprint, user.plan === 'free' ? 'free' : user.plan,
     );
 
-    this.setAuthCookie(res, { ...user, plan: result.effectivePlan }, result.deviceId, result.sessionId);
+    // Only issue a new cookie when the device now has a valid session.
+    // If still over limit, checkAndRegisterDevice still returns a valid
+    // deviceId (since the device was registered), so this is always true.
+    // Guard remains for future-proofing against null results.
+    if (result.deviceId && result.sessionId) {
+      this.setAuthCookie(res, { ...user, plan: result.effectivePlan }, result.deviceId, result.sessionId);
+    }
+
     return { ...this.buildUserResponse({ ...user, plan: result.effectivePlan }), deviceLimitReached: result.limitReached };
   }
 
