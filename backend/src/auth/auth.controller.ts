@@ -62,6 +62,14 @@ export class AuthController {
     return this.authService.resetPassword(body.email, body.resetToken, body.newPassword);
   }
 
+  @Post('change-password')
+  changePassword(
+    @CurrentUser() user: any,
+    @Body() body: { currentPassword: string; newPassword: string },
+  ) {
+    return this.authService.changePassword(user.id, body.currentPassword, body.newPassword);
+  }
+
   /** Verify the current user's password — used by the logout confirmation modal. */
   @Post('verify-password')
   async verifyPassword(

@@ -7,6 +7,7 @@ import { setTheme, saveSettings } from '../../store/slices/settingsSlice';
 import { logoutUser } from '../../store/slices/authSlice';
 import { authApi } from '../../services/api';
 import Modal from '../ui/Modal';
+import ProfileDrawer from '../ui/ProfileDrawer';
 
 const pageTitles: Record<string, string> = {
   '/dashboard':    'Dashboard',
@@ -31,6 +32,15 @@ export default function Header({ sidebarCollapsed }: HeaderProps) {
   const { user }             = useSelector((state: RootState) => state.auth);
 
   const title = pageTitles[location.pathname] || 'ShopIQ';
+
+  // ── Profile drawer state ──────────────────────────────────────────
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  const handlePasswordChanged = async () => {
+    setDrawerOpen(false);
+    await dispatch(logoutUser());
+    navigate('/login', { replace: true });
+  };
 
   // ── Logout confirmation modal state ──────────────────────────────
   const [showLogoutModal,    setShowLogoutModal]    = useState(false);
@@ -110,11 +120,15 @@ export default function Header({ sidebarCollapsed }: HeaderProps) {
             <Bell size={18} />
           </button>
 
-          <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700">
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200 dark:border-gray-700 hover:opacity-80 transition-opacity"
+            title="Account settings"
+          >
             <div className="w-8 h-8 bg-indigo-100 dark:bg-indigo-900 rounded-full flex items-center justify-center">
               <User size={16} className="text-indigo-600 dark:text-indigo-400" />
             </div>
-            <div className="hidden sm:block">
+            <div className="hidden sm:block text-left">
               <p className="text-sm font-medium text-gray-700 dark:text-gray-200 leading-none">
                 {user?.name || user?.email}
               </p>
@@ -122,7 +136,7 @@ export default function Header({ sidebarCollapsed }: HeaderProps) {
                 {user?.plan === 'free' ? 'Free Plan' : `${user?.plan?.replace('_', ' ')} Plan`}
               </p>
             </div>
-          </div>
+          </button>
 
           <button
             onClick={openLogoutModal}
@@ -133,6 +147,13 @@ export default function Header({ sidebarCollapsed }: HeaderProps) {
           </button>
         </div>
       </header>
+
+      {/* ── Profile / password-management drawer ─────────────────── */}
+      <ProfileDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onPasswordChanged={handlePasswordChanged}
+      />
 
       {/* ── Logout confirmation modal ─────────────────────────────── */}
       <Modal

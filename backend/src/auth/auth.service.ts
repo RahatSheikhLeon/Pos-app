@@ -272,6 +272,34 @@ export class AuthService {
     return { success: true };
   }
 
+  // ── Change password (authenticated user, knows current password) ──
+  /**
+   * Verifies the current password, then atomically:
+   * 1. Updates the user's password hash.
+   * 2. Clears every device's sessionId → all existing JWTs become invalid immediately.
+   * The caller must re-login after this call.
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({
+      where:  { id: userId },
+      select: { password: true },
+    });
+    if (!user) throw new UnauthorizedException();
+
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) throw new UnauthorizedException('Current password is incorrect');
+
+    const hashedNew = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { password: hashedNew } }),
+      // Invalidate ALL device sessions — every JWT for this user becomes stale
+      this.prisma.device.updateMany({ where: { userId }, data: { sessionId: '' } }),
+    ]);
+
+    return { success: true };
+  }
+
   // ── Verify password (used by the logout confirmation modal) ────────
   async verifyPassword(userId: string, password: string): Promise<void> {
     const user = await this.prisma.user.findUnique({

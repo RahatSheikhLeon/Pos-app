@@ -41,6 +41,8 @@ export const authApi = {
     http.post('/auth/forgot-password/verify-otp', { email, otp }),
   resetPassword: (email: string, resetToken: string, newPassword: string): Promise<{ success: boolean }> =>
     http.post('/auth/reset-password', { email, resetToken, newPassword }),
+  changePassword: (currentPassword: string, newPassword: string): Promise<{ success: boolean }> =>
+    http.post('/auth/change-password', { currentPassword, newPassword }),
   verifyPassword: (password: string): Promise<{ valid: boolean }> =>
     http.post('/auth/verify-password', { password }),
   recheckDeviceLimit: (fingerprint: string): Promise<any> =>
