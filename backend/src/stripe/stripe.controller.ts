@@ -766,11 +766,33 @@ export class StripeController {
       return;
     }
 
-    await this.prisma.userSubscription.update({
-      where: { userId },
-      data:  { extraDevices: { increment: extraSlots } },
+    // Compute limits before the increment so we can log previousLimit accurately
+    const subBefore = await this.prisma.userSubscription.findUnique({
+      where:   { userId },
+      include: { plan: true },
     });
+    const previousLimit = (subBefore?.plan?.maxDevices ?? 1) + (subBefore?.extraDevices ?? 0);
+    const newLimit      = previousLimit + extraSlots;
+    const pricePaid     = data.amount_total ? data.amount_total / 100 : 0;
 
-    console.log(`[Webhook:device_slot] ✅ +${extraSlots} device slot(s) | userId: ${userId}`);
+    // Atomic: increment extraDevices + create audit record
+    await this.prisma.$transaction([
+      this.prisma.userSubscription.update({
+        where: { userId },
+        data:  { extraDevices: { increment: extraSlots } },
+      }),
+      this.prisma.deviceUpgradeHistory.create({
+        data: {
+          userId,
+          previousLimit,
+          newLimit,
+          addedCount:     extraSlots,
+          pricePaid,
+          stripeSessionId: data.id,
+        },
+      }),
+    ]);
+
+    console.log(`[Webhook:device_slot] ✅ +${extraSlots} slot(s) | userId: ${userId} | ${previousLimit}→${newLimit} | $${pricePaid}`);
   }
 }

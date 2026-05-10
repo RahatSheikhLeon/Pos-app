@@ -162,10 +162,12 @@ export const devicesApi = {
     http.get('/devices', { params: fingerprint ? { fingerprint } : undefined }),
   limitInfo: (fingerprint?: string): Promise<any> =>
     http.get('/devices/limit-info', { params: fingerprint ? { fingerprint } : undefined }),
+  summary: (fingerprint?: string): Promise<any> =>
+    http.get('/devices/summary', { params: fingerprint ? { fingerprint } : undefined }),
   register: (fingerprint: string, name?: string): Promise<any> =>
     http.post('/devices/register', { fingerprint, name }),
-  /** Password-verified secure removal — invalidates all other sessions. */
-  secureRemove: (id: string, password: string): Promise<{ success: boolean }> =>
+  /** Password-verified secure removal. loggedOut:true when the caller removed their own device. */
+  secureRemove: (id: string, password: string): Promise<{ success: boolean; loggedOut: boolean }> =>
     http.post(`/devices/${id}/remove`, { password }),
   /** Simple removal without password (Device Limit page only). */
   remove: (id: string): Promise<void> => http.delete(`/devices/${id}`),

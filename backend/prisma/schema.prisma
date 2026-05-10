@@ -18,7 +18,6 @@ model User {
   plan             String   @default("free")   // mirrors active subscription plan slug
   status           String   @default("active")
   isAdmin          Boolean  @default(false)
-  tokenVersion     Int      @default(0)           // incremented on device removal to revoke all sessions
   stripeCustomerId String?  @unique            // Stripe customer ID, set on first checkout
   createdAt        DateTime @default(now())
 
@@ -31,6 +30,7 @@ model Device {
   fingerprint String
   name        String @default("Device")
   lastSeen    String @default("")
+  sessionId   String @default("")  // UUID rotated on every login; empty = logged out
 
   @@unique([userId, fingerprint])
   @@map("devices")
@@ -182,6 +182,21 @@ model CartSession {
 
   @@index([userId])
   @@map("cart_sessions")
+}
+
+// Audit trail for extra-device-slot purchases via Stripe one-time checkout
+model DeviceUpgradeHistory {
+  id              String   @id @default(uuid())
+  userId          String
+  previousLimit   Int
+  newLimit        Int
+  addedCount      Int      @default(1)
+  pricePaid       Float    @default(0)
+  stripeSessionId String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+  @@map("device_upgrade_history")
 }
 
 model PendingRegistration {

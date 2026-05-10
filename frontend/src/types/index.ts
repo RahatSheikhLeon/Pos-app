@@ -148,11 +148,37 @@ export interface UserSubscription {
   stripeSessionId?: string | null;
   planName: string;
   billingCycle: string;
+  extraDevices: number;   // extra slots purchased beyond base plan limit
   status: string;
   startDate: string;
   endDate: string | null;
   createdAt: string;
   plan: SubscriptionPlan;
+}
+
+export interface DeviceUpgradeHistory {
+  id: string;
+  userId: string;
+  previousLimit: number;
+  newLimit: number;
+  addedCount: number;
+  pricePaid: number;
+  stripeSessionId: string | null;
+  createdAt: string;
+}
+
+export interface DeviceUsageSummary {
+  devices: { id: string; name: string; lastSeen: string; isCurrent: boolean }[];
+  count: number;
+  baseLimit: number;
+  extraDevices: number;
+  effectiveLimit: number;
+  limitReached: boolean;
+  upgradeHistory: DeviceUpgradeHistory[];
+  endDate: string | null;
+  planId: string;
+  planName: string;
+  billingCycle: string;
 }
 
 

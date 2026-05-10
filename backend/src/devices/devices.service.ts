@@ -1,20 +1,19 @@
 import { Injectable, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 
 export interface DeviceCheckResult {
   effectivePlan: string;
   limitReached:  boolean;
+  deviceId:      string | null; // null when over limit (device not registered)
+  sessionId:     string | null; // null when over limit
 }
 
 @Injectable()
 export class DevicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Returns the effective device limit for a user:
-   * plan.maxDevices + any extra slots purchased via Stripe.
-   */
   async getEffectiveLimit(userId: string): Promise<number> {
     const sub = await this.prisma.userSubscription.findUnique({
       where:   { userId },
@@ -24,17 +23,19 @@ export class DevicesService {
   }
 
   /**
-   * Called automatically on every login.
+   * Called on every login.
    *
-   * - Known fingerprint → refresh lastSeen, grant purchasedPlan.
-   * - New fingerprint + within effective limit → register, grant purchasedPlan.
-   * - New fingerprint + over limit → do NOT register, return { effectivePlan: 'free', limitReached: true }.
+   * Each successful call rotates the device's sessionId so the new JWT is the
+   * only valid one for that device — previous JWTs for the same fingerprint are
+   * immediately invalidated. Other devices are completely unaffected.
    */
   async checkAndRegisterDevice(
     userId:       string,
     fingerprint:  string,
     purchasedPlan: string,
   ): Promise<DeviceCheckResult> {
+    const newSessionId = randomUUID();
+
     const existing = await this.prisma.device.findUnique({
       where: { userId_fingerprint: { userId, fingerprint } },
     });
@@ -42,25 +43,24 @@ export class DevicesService {
     if (existing) {
       await this.prisma.device.update({
         where: { id: existing.id },
-        data:  { lastSeen: new Date().toISOString() },
+        data:  { lastSeen: new Date().toISOString(), sessionId: newSessionId },
       });
-      return { effectivePlan: purchasedPlan, limitReached: false };
+      return { effectivePlan: purchasedPlan, limitReached: false, deviceId: existing.id, sessionId: newSessionId };
     }
 
-    // New device — check effective limit (base + purchased extras)
     const limit = await this.getEffectiveLimit(userId);
     const count = await this.prisma.device.count({ where: { userId } });
 
     if (count >= limit) {
-      console.log(`[Devices] Over limit for user ${userId}: ${count}/${limit}. Effective plan → free`);
-      return { effectivePlan: 'free', limitReached: true };
+      console.log(`[Devices] Over limit for user ${userId}: ${count}/${limit}. effectivePlan → free`);
+      return { effectivePlan: 'free', limitReached: true, deviceId: null, sessionId: null };
     }
 
-    await this.prisma.device.create({
-      data: { userId, fingerprint, name: 'Browser', lastSeen: new Date().toISOString() },
+    const device = await this.prisma.device.create({
+      data: { userId, fingerprint, name: 'Browser', lastSeen: new Date().toISOString(), sessionId: newSessionId },
     });
-    console.log(`[Devices] Registered device for user ${userId} (${count + 1}/${limit}). plan → ${purchasedPlan}`);
-    return { effectivePlan: purchasedPlan, limitReached: false };
+    console.log(`[Devices] Registered new device ${device.id} for user ${userId} (${count + 1}/${limit})`);
+    return { effectivePlan: purchasedPlan, limitReached: false, deviceId: device.id, sessionId: newSessionId };
   }
 
   // ── Manual registration (Subscription page) ───────────────────────
@@ -69,9 +69,10 @@ export class DevicesService {
       where: { userId_fingerprint: { userId, fingerprint } },
     });
     if (existing) {
+      const sid = randomUUID();
       await this.prisma.device.update({
         where: { userId_fingerprint: { userId, fingerprint } },
-        data:  { lastSeen: new Date().toISOString() },
+        data:  { lastSeen: new Date().toISOString(), sessionId: sid },
       });
       return existing;
     }
@@ -79,20 +80,35 @@ export class DevicesService {
     const limit = await this.getEffectiveLimit(userId);
     const count = await this.prisma.device.count({ where: { userId } });
     if (count >= limit) {
-      throw new ForbiddenException(
-        `Device limit reached (max ${limit} device${limit !== 1 ? 's' : ''})`,
-      );
+      throw new ForbiddenException(`Device limit reached (max ${limit} device${limit !== 1 ? 's' : ''})`);
     }
 
     return this.prisma.device.create({
-      data: { userId, fingerprint, name, lastSeen: new Date().toISOString() },
+      data: { userId, fingerprint, name, lastSeen: new Date().toISOString(), sessionId: randomUUID() },
     });
   }
 
-  // ── List devices — optional fingerprint marks the caller's device ─
+  /**
+   * Marks a device as logged out by clearing its sessionId.
+   * The Device record stays in the DB (the device is still registered);
+   * it simply disappears from the "active sessions" list.
+   * Other devices are completely unaffected.
+   */
+  async logoutDevice(userId: string, deviceId: string) {
+    await this.prisma.device.updateMany({
+      where: { id: deviceId, userId },     // userId check prevents cross-user attacks
+      data:  { sessionId: '' },
+    });
+  }
+
+  /**
+   * Returns ONLY devices with an active session (sessionId != '').
+   * Logged-out devices are automatically excluded.
+   * If currentFingerprint is provided, the matching device gets isCurrent: true.
+   */
   async listDevices(userId: string, currentFingerprint?: string) {
     const devices = await this.prisma.device.findMany({
-      where:   { userId },
+      where:   { userId, sessionId: { not: '' } }, // active sessions only
       orderBy: { lastSeen: 'desc' },
     });
     return devices.map((d) => ({
@@ -103,7 +119,7 @@ export class DevicesService {
     }));
   }
 
-  // ── Remove a specific device (no password — used from DeviceLimitReached page) ──
+  // ── Simple removal without password (DeviceLimitReached page) ────
   async removeDevice(userId: string, deviceId: string) {
     const device = await this.prisma.device.findFirst({ where: { id: deviceId, userId } });
     if (!device) throw new ForbiddenException('Device not found');
@@ -112,26 +128,24 @@ export class DevicesService {
   }
 
   /**
-   * Secure device removal — requires the user's current password.
+   * Secure device removal — requires the user's account password.
    *
-   * On success:
-   * 1. Verifies password with bcrypt (generic error on failure — no oracle).
-   * 2. Atomically deletes the device record and increments tokenVersion.
-   *    Incrementing tokenVersion immediately invalidates every existing JWT for
-   *    this user; the controller must re-issue a fresh cookie for the caller.
-   * 3. Returns the new tokenVersion so the controller can embed it in the
-   *    replacement JWT without an extra DB round-trip.
+   * Deletes ONLY the target device record. Because the JWT strategy validates
+   * against Device.sessionId (not a global tokenVersion), only that specific
+   * device's JWT becomes invalid. All other sessions remain active.
+   *
+   * Returns whether the caller removed their own device, so the controller
+   * can decide whether to clear the caller's cookie.
    */
   async secureRemoveDevice(
-    userId:   string,
-    deviceId: string,
-    password: string,
-  ): Promise<{ newTokenVersion: number }> {
-    // 1. Confirm device belongs to this user
+    userId:          string,
+    deviceId:        string,
+    password:        string,
+    callerDeviceId?: string, // deviceId from the caller's JWT
+  ): Promise<{ removedOwnDevice: boolean }> {
     const device = await this.prisma.device.findFirst({ where: { id: deviceId, userId } });
     if (!device) throw new ForbiddenException('Device not found');
 
-    // 2. Bcrypt verify — use a generic message to avoid password-oracle attacks
     const user = await this.prisma.user.findUnique({
       where:  { id: userId },
       select: { password: true },
@@ -141,20 +155,13 @@ export class DevicesService {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) throw new UnauthorizedException('Invalid password');
 
-    // 3. Atomic: delete device + bump tokenVersion in one transaction
-    const [, updated] = await this.prisma.$transaction([
-      this.prisma.device.delete({ where: { id: deviceId } }),
-      this.prisma.user.update({
-        where:  { id: userId },
-        data:   { tokenVersion: { increment: 1 } },
-        select: { tokenVersion: true },
-      }),
-    ]);
+    // Delete only this device — other sessions are completely unaffected
+    await this.prisma.device.delete({ where: { id: deviceId } });
 
-    return { newTokenVersion: updated.tokenVersion };
+    return { removedOwnDevice: deviceId === callerDeviceId };
   }
 
-  // ── Snapshot for the Device Limit page ───────────────────────────
+  // ── Snapshot for DeviceLimitReached page ─────────────────────────
   async getLimitInfo(userId: string, currentFingerprint?: string) {
     const [sub, count, devices] = await Promise.all([
       this.prisma.userSubscription.findUnique({ where: { userId }, include: { plan: true } }),
@@ -162,8 +169,8 @@ export class DevicesService {
       this.listDevices(userId, currentFingerprint),
     ]);
 
-    const baseLimit    = sub?.plan?.maxDevices ?? 1;
-    const extraDevices = sub?.extraDevices ?? 0;
+    const baseLimit      = sub?.plan?.maxDevices ?? 1;
+    const extraDevices   = sub?.extraDevices ?? 0;
     const effectiveLimit = baseLimit + extraDevices;
 
     return {
@@ -177,6 +184,37 @@ export class DevicesService {
       planId:       sub?.planId ?? 'plan_free',
       planName:     sub?.planName ?? 'Free',
       billingCycle: sub?.billingCycle ?? 'monthly',
+    };
+  }
+
+  // ── Full summary for Subscription page (includes upgrade history) ─
+  async getUsageSummary(userId: string, currentFingerprint?: string) {
+    const [sub, count, devices, upgradeHistory] = await Promise.all([
+      this.prisma.userSubscription.findUnique({ where: { userId }, include: { plan: true } }),
+      this.prisma.device.count({ where: { userId, sessionId: { not: '' } } }), // active only
+      this.listDevices(userId, currentFingerprint),
+      this.prisma.deviceUpgradeHistory.findMany({
+        where:   { userId },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    const baseLimit      = sub?.plan?.maxDevices ?? 1;
+    const extraDevices   = sub?.extraDevices ?? 0;
+    const effectiveLimit = baseLimit + extraDevices;
+
+    return {
+      devices,
+      count,
+      baseLimit,
+      extraDevices,
+      effectiveLimit,
+      limitReached:   count >= effectiveLimit,
+      upgradeHistory,
+      endDate:        sub?.endDate ?? null,
+      planId:         sub?.planId ?? 'plan_free',
+      planName:       sub?.planName ?? 'Free',
+      billingCycle:   sub?.billingCycle ?? 'monthly',
     };
   }
 }

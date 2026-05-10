@@ -7,7 +7,7 @@ import {
 import toast from 'react-hot-toast';
 import { RootState } from '../store';
 import { stripeApi, subscriptionPlansApi, devicesApi } from '../services/api';
-import { SubscriptionPlan, UserSubscription } from '../types';
+import { SubscriptionPlan, UserSubscription, DeviceUsageSummary } from '../types';
 import Modal from '../components/ui/Modal';
 import { getDeviceId } from '../utils/deviceId';
 
@@ -64,7 +64,8 @@ export default function Subscription() {
 
   const [plans, setPlans]               = useState<SubscriptionPlan[]>([]);
   const [subscription, setSubscription] = useState<UserSubscription | null>(null);
-  const [devices, setDevices]           = useState<any[]>([]);
+  const [deviceSummary, setDeviceSummary] = useState<DeviceUsageSummary | null>(null);
+  const [devices, setDevices]             = useState<any[]>([]);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [showConfirm, setShowConfirm]   = useState(false);
@@ -85,21 +86,27 @@ export default function Subscription() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [p, s, d, ps] = await Promise.all([
+      const [p, s, summary, ps] = await Promise.all([
         subscriptionPlansApi.getAll(),
         stripeApi.getSubscription(),
-        devicesApi.list(fingerprint),   // pass fingerprint so isCurrent is populated
+        devicesApi.summary(fingerprint), // includes devices + upgrade history
         stripeApi.getPaymentStatus(),
       ]);
       setPlans(p);
       setSubscription(s);
-      setDevices(d);
+      setDeviceSummary(summary as DeviceUsageSummary);
+      setDevices((summary as DeviceUsageSummary).devices);
       setPaymentStatus(ps.status);
     } catch { toast.error('Failed to load subscription'); }
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadData();
+    // Poll every 30 s so logouts / removals by other browsers are reflected promptly
+    const interval = setInterval(loadData, 30_000);
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activePlanId = subscription?.planId ?? 'plan_free';
   const isPro        = user?.plan !== 'free';
@@ -173,10 +180,25 @@ export default function Subscription() {
     setRemoving(true);
     setRemoveError(null);
     try {
-      await devicesApi.secureRemove(removeTarget.id, removePassword);
+      const result = await devicesApi.secureRemove(removeTarget.id, removePassword);
+
+      if (result.loggedOut) {
+        // Caller removed their own device — backend cleared the cookie.
+        // Full page reload resets all Redux state and lands on /login.
+        toast.success('Your device has been removed. Redirecting to login…');
+        setTimeout(() => { window.location.href = '/login'; }, 1200);
+        return;
+      }
+
+      // Caller removed a DIFFERENT device — their own session is unaffected.
       setDevices(d => d.filter(dev => dev.id !== removeTarget.id));
+      setDeviceSummary(prev =>
+        prev
+          ? { ...prev, devices: prev.devices.filter(d => d.id !== removeTarget!.id), count: prev.count - 1 }
+          : prev,
+      );
       closeRemoveModal();
-      toast.success('Device removed — all other sessions have been revoked');
+      toast.success('Device removed — only that device\'s session has been ended');
     } catch (err: any) {
       setRemoveError(err.message || 'Incorrect password');
     } finally {
@@ -438,15 +460,14 @@ export default function Subscription() {
         </div>
       )}
 
-      {/* ── Active Devices ───────────────────────────────────────── */}
+      {/* ── Device Management ────────────────────────────────────── */}
       <div className="card overflow-hidden">
+
+        {/* Header */}
         <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900 dark:text-white text-sm flex items-center gap-2">
             <Monitor size={15} className="text-gray-400" />
-            Active Devices
-            <span className="text-gray-400 font-normal">
-              ({devices.length}{subscription?.plan?.maxDevices ? ` / ${subscription.plan.maxDevices}` : ''})
-            </span>
+            Device Management
             {isOverDeviceLimit && (
               <span className="text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full">
                 Limit reached
@@ -458,6 +479,91 @@ export default function Subscription() {
           </span>
         </div>
 
+        {/* ── Device usage breakdown ──────────────────────────── */}
+        {deviceSummary && (
+          <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700 space-y-3">
+
+            {/* Slot summary row */}
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-400">Base plan:</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {deviceSummary.baseLimit} device{deviceSummary.baseLimit !== 1 ? 's' : ''}
+                </span>
+              </div>
+              {deviceSummary.extraDevices > 0 && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-400">Purchased extras:</span>
+                  <span className="font-semibold text-indigo-600 dark:text-indigo-400">
+                    +{deviceSummary.extraDevices}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-400">Total allowed:</span>
+                <span className="font-semibold text-gray-900 dark:text-white">
+                  {deviceSummary.effectiveLimit}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <span className="text-gray-400">Currently used:</span>
+                <span className={`font-semibold ${
+                  deviceSummary.count >= deviceSummary.effectiveLimit
+                    ? 'text-red-500' : 'text-green-600 dark:text-green-400'
+                }`}>
+                  {deviceSummary.count} / {deviceSummary.effectiveLimit}
+                </span>
+              </div>
+            </div>
+
+            {/* Usage bar */}
+            <div>
+              <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    deviceSummary.count >= deviceSummary.effectiveLimit
+                      ? 'bg-red-500' : 'bg-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min((deviceSummary.count / deviceSummary.effectiveLimit) * 100, 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Upgrade history timeline */}
+            {deviceSummary.upgradeHistory.length > 0 && (
+              <div className="pt-1">
+                <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
+                  Slot upgrade history
+                </p>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs text-gray-400">
+                    <div className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 flex-shrink-0" />
+                    <span>Base plan: {deviceSummary.baseLimit} device{deviceSummary.baseLimit !== 1 ? 's' : ''}</span>
+                  </div>
+                  {deviceSummary.upgradeHistory.map((h) => (
+                    <div key={h.id} className="flex items-center gap-2 text-xs">
+                      <div className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />
+                      <span className="text-indigo-600 dark:text-indigo-400 font-medium">
+                        +{h.addedCount} device{h.addedCount !== 1 ? 's' : ''}
+                      </span>
+                      <span className="text-gray-400">
+                        → {h.newLimit} total
+                      </span>
+                      {h.pricePaid > 0 && (
+                        <span className="text-gray-400">· ${h.pricePaid.toFixed(2)}</span>
+                      )}
+                      <span className="text-gray-500">
+                        · {new Date(h.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Device list ──────────────────────────────────────── */}
         {devices.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-400">No devices registered</p>
         ) : (

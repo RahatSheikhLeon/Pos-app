@@ -21,30 +21,48 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   /**
-   * Called on every authenticated request.
-   * Validates tokenVersion against DB so device removals immediately revoke all sessions.
-   * Old JWTs without tokenVersion default to 0; if DB is also 0, they still pass.
-   * As soon as a device is removed (DB tokenVersion increments), all old tokens fail.
+   * Per-device session validation.
+   *
+   * The JWT carries deviceId + sessionId. We look up exactly that Device row
+   * and verify the sessionId matches. This means:
+   *
+   * - Removing device B → its row is deleted → only device B's JWT fails.
+   *   Device A, C, D are completely unaffected.
+   *
+   * - Logging out from device B → Device.sessionId set to "" →
+   *   device B's JWT fails; all others unaffected.
+   *
+   * - Logging in from device B again → new sessionId → old JWT revoked,
+   *   new JWT valid.
+   *
+   * Old JWTs without deviceId (issued before this change) are rejected and
+   * require a fresh login.
    */
   async validate(payload: any) {
-    const user = await this.prisma.user.findUnique({
-      where:  { id: payload.sub },
-      select: { tokenVersion: true },
+    if (!payload.deviceId) {
+      throw new UnauthorizedException('Session expired — please log in again');
+    }
+
+    const device = await this.prisma.device.findUnique({
+      where:  { id: payload.deviceId },
+      select: { userId: true, sessionId: true },
     });
 
-    if (!user) throw new UnauthorizedException('Account not found');
+    if (!device || device.userId !== payload.sub) {
+      throw new UnauthorizedException('Device not found — please log in again');
+    }
 
-    const jwtVersion = payload.tokenVersion ?? 0;
-    if (jwtVersion !== user.tokenVersion) {
-      throw new UnauthorizedException('Session revoked — please log in again');
+    if (!device.sessionId || device.sessionId !== payload.sessionId) {
+      throw new UnauthorizedException('Session expired — please log in again');
     }
 
     return {
-      id:      payload.sub,
-      email:   payload.email,
-      name:    payload.name,
-      plan:    payload.plan,
-      isAdmin: payload.isAdmin ?? false,
+      id:       payload.sub,
+      email:    payload.email,
+      name:     payload.name,
+      plan:     payload.plan,
+      isAdmin:  payload.isAdmin ?? false,
+      deviceId: payload.deviceId,  // available via @CurrentUser()
     };
   }
 }

@@ -51,8 +51,11 @@ export class AuthController {
   }
 
   @Post('logout')
-  logout(@Res({ passthrough: true }) res: Response) {
-    return this.authService.logout(res);
+  logout(
+    @CurrentUser() user: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.authService.logout(user.id, user.deviceId, res);
   }
 
   @Get('profile')

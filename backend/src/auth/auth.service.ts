@@ -50,7 +50,6 @@ export class AuthService {
     });
 
     await this.emailService.sendVerificationOtp(email, name, otp);
-
     return { pendingEmail: email };
   }
 
@@ -66,10 +65,7 @@ export class AuthService {
 
     if (pending.attempts >= MAX_ATTEMPTS) {
       await this.prisma.pendingRegistration.delete({ where: { email } });
-      throw new HttpException(
-        'Too many failed attempts. Please register again',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      throw new HttpException('Too many failed attempts. Please register again', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const valid = await bcrypt.compare(otp, pending.hashedOtp);
@@ -86,7 +82,6 @@ export class AuthService {
       );
     }
 
-    // OTP verified — create the real user
     const user = await this.prisma.user.create({
       data: { email, password: pending.hashedPassword, name: pending.name },
     });
@@ -95,15 +90,19 @@ export class AuthService {
       data: { userId: user.id, planId: 'plan_free', status: 'active' },
     });
 
-    if (fingerprint) {
-      await this.prisma.device
-        .create({ data: { userId: user.id, fingerprint, name: 'Browser', lastSeen: new Date().toISOString() } })
-        .catch(() => {});
-    }
-
     await this.prisma.pendingRegistration.delete({ where: { email } });
 
-    this.setAuthCookie(res, user);
+    // Register the first device and get its sessionId for the JWT
+    let deviceId:  string | null = null;
+    let sessionId: string | null = null;
+
+    if (fingerprint) {
+      const result = await this.devicesService.checkAndRegisterDevice(user.id, fingerprint, 'free');
+      deviceId  = result.deviceId;
+      sessionId = result.sessionId;
+    }
+
+    this.setAuthCookie(res, user, deviceId, sessionId);
     return this.buildUserResponse(user);
   }
 
@@ -116,10 +115,7 @@ export class AuthService {
     const withinWindow = new Date() < windowEnd;
 
     if (withinWindow && pending.resendCount >= MAX_RESENDS) {
-      throw new HttpException(
-        'Too many resend requests. Please wait 15 minutes',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      throw new HttpException('Too many resend requests. Please wait 15 minutes', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     const newResendWindowAt = withinWindow ? pending.resendWindowAt : new Date();
@@ -134,7 +130,6 @@ export class AuthService {
     });
 
     await this.emailService.sendVerificationOtp(email, pending.name, otp);
-
     return { message: 'Verification code resent' };
   }
 
@@ -150,46 +145,50 @@ export class AuthService {
 
     let effectivePlan  = user.plan;
     let limitReached   = false;
+    let deviceId:  string | null = null;
+    let sessionId: string | null = null;
 
     if (fingerprint && user.plan !== 'free') {
       const result = await this.devicesService.checkAndRegisterDevice(user.id, fingerprint, user.plan);
       effectivePlan = result.effectivePlan;
       limitReached  = result.limitReached;
+      deviceId      = result.deviceId;
+      sessionId     = result.sessionId;
+    } else if (fingerprint) {
+      // Free plan — still register/update the device so it appears in the active list
+      const result = await this.devicesService.checkAndRegisterDevice(user.id, fingerprint, 'free');
+      deviceId  = result.deviceId;
+      sessionId = result.sessionId;
     }
 
-    this.setAuthCookie(res, { ...user, plan: effectivePlan });
+    this.setAuthCookie(res, { ...user, plan: effectivePlan }, deviceId, sessionId);
     return { ...this.buildUserResponse({ ...user, plan: effectivePlan }), deviceLimitReached: limitReached };
   }
 
-  // ── Re-check device limit after removal or slot purchase ──────────
-  // Called with a valid JWT cookie, re-issues a fresh JWT and returns the updated state.
+  // ── Re-check device limit after slot purchase ──────────────────────
   async recheckDeviceLimit(userId: string, fingerprint: string, res: Response) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new UnauthorizedException();
 
-    if (user.plan === 'free' || !fingerprint) {
-      this.setAuthCookie(res, user);
-      return { ...this.buildUserResponse(user), deviceLimitReached: false };
-    }
-
-    const { effectivePlan, limitReached } = await this.devicesService.checkAndRegisterDevice(
-      user.id, fingerprint, user.plan,
+    const result = await this.devicesService.checkAndRegisterDevice(
+      user.id, fingerprint, user.plan === 'free' ? 'free' : user.plan,
     );
 
-    this.setAuthCookie(res, { ...user, plan: effectivePlan });
-    return { ...this.buildUserResponse({ ...user, plan: effectivePlan }), deviceLimitReached: limitReached };
+    this.setAuthCookie(res, { ...user, plan: result.effectivePlan }, result.deviceId, result.sessionId);
+    return { ...this.buildUserResponse({ ...user, plan: result.effectivePlan }), deviceLimitReached: result.limitReached };
   }
 
-  // ── Logout ────────────────────────────────────────────────────────
-  async logout(res: Response) {
+  // ── Logout — invalidates ONLY the current device session ──────────
+  async logout(userId: string, deviceId: string | undefined, res: Response) {
+    if (deviceId) {
+      // Clear sessionId on the specific device → it disappears from the active list
+      // and its JWT is rejected on the next request. Other devices are unaffected.
+      await this.devicesService.logoutDevice(userId, deviceId);
+    }
     res.clearCookie(COOKIE_NAME, { path: '/' });
     return { success: true };
   }
 
-  /**
-   * Always returns users.plan from the database — never from the JWT.
-   * Plan upgrades via Stripe webhook are visible immediately without re-login.
-   */
   async getProfile(userId: string, _jwtPlan: string) {
     const user = await this.prisma.user.findUnique({
       where:  { id: userId },
@@ -204,14 +203,20 @@ export class AuthService {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  private setAuthCookie(res: Response, user: any) {
+  private setAuthCookie(
+    res:       Response,
+    user:      any,
+    deviceId:  string | null,
+    sessionId: string | null,
+  ) {
     const token = this.jwtService.sign({
-      sub:          user.id,
-      email:        user.email,
-      name:         user.name,
-      plan:         user.plan,
-      isAdmin:      user.isAdmin ?? false,
-      tokenVersion: user.tokenVersion ?? 0,
+      sub:      user.id,
+      email:    user.email,
+      name:     user.name,
+      plan:     user.plan,
+      isAdmin:  user.isAdmin ?? false,
+      deviceId,   // Device.id — validated by JwtStrategy
+      sessionId,  // rotated UUID — per-session revocation key
     });
 
     res.cookie(COOKIE_NAME, token, {
