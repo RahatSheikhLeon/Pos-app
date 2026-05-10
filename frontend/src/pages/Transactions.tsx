@@ -72,18 +72,29 @@ export default function Transactions() {
       return;
     }
 
-    if (returnable.length === 1) {
-      // Single returnable item → confirm and process immediately
-      const item = returnable[0];
-      const qty = remainingQty(t, item);
-      confirmReturn(t, [{ productId: item.productId, quantity: qty }]);
+    // RULE 1 — the ONLY case where a direct (no-popup) return is allowed:
+    //   • the original transaction has exactly ONE product type, AND
+    //   • exactly ONE unit of it remains to be returned.
+    //
+    // Every other situation requires the popup:
+    //   RULE 2 — one product type, qty > 1  → popup (user picks how many)
+    //   RULE 3 — multiple product types      → popup (always, even after partial returns)
+    //
+    // We deliberately use t.items.length (original count) NOT returnable.length
+    // (remaining count). After a partial return reduces returnable to 1 item, the
+    // original multi-product transaction must still go through the popup.
+    if (t.items.length === 1 && remainingQty(t, returnable[0]) === 1) {
+      confirmReturn(t, [{ productId: returnable[0].productId, quantity: 1 }]);
       return;
     }
 
-    // Multiple items → open modal with quantity selectors
+    // All other cases: open the selection popup.
+    // Default every item to 0 — the user must explicitly set the quantity they
+    // want to return.  Defaulting to max caused a critical bug: if the user only
+    // adjusted some items and confirmed, ALL items (at their max) were returned.
     const initial: ReturnQtys = {};
     returnable.forEach((i) => {
-      initial[i.productId] = remainingQty(t, i); // default: return all
+      initial[i.productId] = 0;
     });
     setReturnQtys(initial);
     setReturnTarget(t);
@@ -97,6 +108,10 @@ export default function Transactions() {
     setReturnTarget(null);
     try {
       await dispatch(returnTransaction({ id: t.id, items })).unwrap();
+      // Re-fetch the full list so Redux always reflects the latest DB state.
+      // This guarantees the next popup — opened immediately after this one — gets
+      // accurate returnedItems/remainingQty regardless of any response-shape edge cases.
+      dispatch(fetchTransactions());
       if (selected?.id === t.id) setSelected(null);
       toast.success('Return processed successfully');
     } catch (err: any) {
@@ -384,7 +399,8 @@ export default function Transactions() {
         {returnTarget && (
           <div className="space-y-4">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Select the quantity to return for each product. Set to 0 to skip an item.
+              Use <strong>+</strong> to set the quantity to return per product.
+              Items left at <strong>0</strong> will not be returned.
             </p>
 
             <div className="space-y-3">
