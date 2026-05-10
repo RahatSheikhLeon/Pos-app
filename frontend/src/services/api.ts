@@ -15,7 +15,8 @@ http.interceptors.response.use(
   (res) => res.data,
   (err) => {
     const message = err.response?.data?.message || 'Request failed';
-    if (err.response?.status === 401 && !window.location.pathname.includes('/login')) {
+    const path = window.location.pathname;
+    if (err.response?.status === 401 && !path.includes('/login') && !path.includes('/register')) {
       window.location.href = '/login';
     }
     return Promise.reject(new Error(Array.isArray(message) ? message[0] : message));
