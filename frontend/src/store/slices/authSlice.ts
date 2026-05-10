@@ -161,10 +161,17 @@ const authSlice = createSlice({
         state.checked = true;
       })
 
-      // logout
+      // logout — clear state whether the API succeeded or failed;
+      // the cookie is always cleared server-side, so the user is signed out
       .addCase(logoutUser.fulfilled, (state) => {
-        state.user    = null;
-        state.checked = true;
+        state.user               = null;
+        state.deviceLimitReached = false;
+        state.checked            = true;
+      })
+      .addCase(logoutUser.rejected, (state) => {
+        state.user               = null;
+        state.deviceLimitReached = false;
+        state.checked            = true;
       });
   },
 });

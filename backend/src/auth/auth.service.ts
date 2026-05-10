@@ -178,12 +178,24 @@ export class AuthService {
     return { ...this.buildUserResponse({ ...user, plan: result.effectivePlan }), deviceLimitReached: result.limitReached };
   }
 
-  // ── Logout — invalidates ONLY the current device session ──────────
-  async logout(userId: string, deviceId: string | undefined, res: Response) {
-    if (deviceId) {
-      // Clear sessionId on the specific device → it disappears from the active list
-      // and its JWT is rejected on the next request. Other devices are unaffected.
-      await this.devicesService.logoutDevice(userId, deviceId);
+  // ── Verify password (used by the logout confirmation modal) ────────
+  async verifyPassword(userId: string, password: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where:  { id: userId },
+      select: { password: true },
+    });
+    if (!user) throw new UnauthorizedException();
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new UnauthorizedException('Incorrect password');
+  }
+
+  // ── Logout — always succeeds; only cleans up if IDs are available ─
+  async logout(userId: string | undefined, deviceId: string | undefined, res: Response) {
+    if (userId && deviceId) {
+      // Best-effort: clear sessionId so this device vanishes from the active list
+      // and its JWT is rejected on the next request. All other sessions untouched.
+      await this.devicesService.logoutDevice(userId, deviceId).catch(() => {});
     }
     res.clearCookie(COOKIE_NAME, { path: '/' });
     return { success: true };

@@ -35,6 +35,8 @@ export const authApi = {
     http.post('/auth/login', { email, password, ...(fingerprint ? { fingerprint } : {}) }),
   logout: (): Promise<any> => http.post('/auth/logout'),
   profile: (): Promise<any> => http.get('/auth/profile'),
+  verifyPassword: (password: string): Promise<{ valid: boolean }> =>
+    http.post('/auth/verify-password', { password }),
   recheckDeviceLimit: (fingerprint: string): Promise<any> =>
     http.post('/auth/recheck-device', { fingerprint }),
 };
