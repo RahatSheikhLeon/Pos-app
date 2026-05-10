@@ -10,11 +10,25 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  register(
-    @Body() body: { email: string; password: string; name: string; fingerprint?: string },
+  startRegistration(
+    @Body() body: { email: string; password: string; name: string },
+  ) {
+    return this.authService.startRegistration(body.email, body.password, body.name);
+  }
+
+  @Public()
+  @Post('register/verify')
+  verifyRegistration(
+    @Body() body: { email: string; otp: string; fingerprint?: string },
     @Res({ passthrough: true }) res: Response,
   ) {
-    return this.authService.register(body.email, body.password, body.name, res, body.fingerprint);
+    return this.authService.verifyRegistration(body.email, body.otp, res, body.fingerprint);
+  }
+
+  @Public()
+  @Post('register/resend')
+  resendRegistrationOtp(@Body() body: { email: string }) {
+    return this.authService.resendRegistrationOtp(body.email);
   }
 
   @Public()
@@ -33,8 +47,6 @@ export class AuthController {
 
   @Get('profile')
   getProfile(@CurrentUser() user: any) {
-    // Pass the JWT plan so the effective plan (not DB plan) is returned.
-    // This ensures over-limit devices consistently see 'free' on page reloads.
     return this.authService.getProfile(user.id, user.plan);
   }
 }

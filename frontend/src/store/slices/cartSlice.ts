@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Product } from '../../types';
 import { cartsApi, CartItemRow, CartSessionRow, CartsResponse } from '../../services/api';
 import { getCartLimit } from '../planLimits';
-import { login, register, fetchProfile, updatePlan } from './authSlice';
+import { login, verifyRegistration, fetchProfile, updatePlan } from './authSlice';
 
 interface CartItem {
   product: Product;
@@ -351,7 +351,7 @@ const cartSlice = createSlice({
       .addCase(login.fulfilled, (state, action) => {
         state.maxCarts = getCartLimit(action.payload?.plan);
       })
-      .addCase(register.fulfilled, (state, action) => {
+      .addCase(verifyRegistration.fulfilled, (state, action) => {
         state.maxCarts = getCartLimit(action.payload?.plan);
       })
       .addCase(fetchProfile.fulfilled, (state, action) => {

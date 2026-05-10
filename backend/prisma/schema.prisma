@@ -182,6 +182,21 @@ model CartSession {
   @@map("cart_sessions")
 }
 
+model PendingRegistration {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  hashedPassword String
+  name           String
+  hashedOtp      String
+  otpExpiresAt   DateTime
+  attempts       Int      @default(0)
+  resendCount    Int      @default(0)
+  resendWindowAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@map("pending_registrations")
+}
+
 model Settings {
   id             String  @id
   userId         String  @default("")

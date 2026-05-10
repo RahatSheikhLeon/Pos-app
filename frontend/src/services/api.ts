@@ -24,8 +24,12 @@ http.interceptors.response.use(
 
 // ── Auth ──────────────────────────────────────────────────────────
 export const authApi = {
-  register: (email: string, password: string, name: string, fingerprint?: string): Promise<any> =>
-    http.post('/auth/register', { email, password, name, ...(fingerprint ? { fingerprint } : {}) }),
+  registerStart: (email: string, password: string, name: string): Promise<{ pendingEmail: string }> =>
+    http.post('/auth/register', { email, password, name }),
+  registerVerify: (email: string, otp: string, fingerprint?: string): Promise<any> =>
+    http.post('/auth/register/verify', { email, otp, ...(fingerprint ? { fingerprint } : {}) }),
+  registerResend: (email: string): Promise<{ message: string }> =>
+    http.post('/auth/register/resend', { email }),
   login: (email: string, password: string, fingerprint?: string): Promise<any> =>
     http.post('/auth/login', { email, password, ...(fingerprint ? { fingerprint } : {}) }),
   logout: (): Promise<any> => http.post('/auth/logout'),
