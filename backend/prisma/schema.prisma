@@ -199,6 +199,21 @@ model DeviceUpgradeHistory {
   @@map("device_upgrade_history")
 }
 
+// Temporary record for password-reset flow
+// Stage 1 → hashedOtp set; Stage 2 → hashedResetToken set (OTP cleared)
+model PasswordReset {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  hashedOtp        String
+  otpExpiresAt     DateTime
+  attempts         Int       @default(0)
+  hashedResetToken String?   // set after OTP verified
+  resetTokenExpiry DateTime? // 15-min window for the password-reset step
+  createdAt        DateTime  @default(now())
+
+  @@map("password_resets")
+}
+
 model PendingRegistration {
   id             String   @id @default(uuid())
   email          String   @unique

@@ -42,6 +42,26 @@ export class AuthController {
     return this.authService.login(body.email, body.password, res, body.fingerprint);
   }
 
+  // ── Password-reset flow (all @Public) ────────────────────────────
+
+  @Public()
+  @Post('forgot-password')
+  forgotPassword(@Body() body: { email: string }) {
+    return this.authService.forgotPassword(body.email);
+  }
+
+  @Public()
+  @Post('forgot-password/verify-otp')
+  verifyResetOtp(@Body() body: { email: string; otp: string }) {
+    return this.authService.verifyResetOtp(body.email, body.otp);
+  }
+
+  @Public()
+  @Post('reset-password')
+  resetPassword(@Body() body: { email: string; resetToken: string; newPassword: string }) {
+    return this.authService.resetPassword(body.email, body.resetToken, body.newPassword);
+  }
+
   /** Verify the current user's password — used by the logout confirmation modal. */
   @Post('verify-password')
   async verifyPassword(

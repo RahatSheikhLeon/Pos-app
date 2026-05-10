@@ -14,6 +14,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import PaymentReturn from './pages/PaymentReturn';
 import DeviceLimitReached from './pages/DeviceLimitReached';
+import ForgotPassword from './pages/ForgotPassword';
 import { RootState, AppDispatch } from './store';
 import { fetchSettings } from './store/slices/settingsSlice';
 import { fetchProfile } from './store/slices/authSlice';
@@ -43,8 +44,9 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login"    element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
-        <Route path="/register" element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+        <Route path="/login"           element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />} />
+        <Route path="/register"        element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
 
         {/* Payment return pages — public, no layout */}
         <Route path="/payment/success" element={<PaymentReturn type="success" />} />

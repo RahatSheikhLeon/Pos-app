@@ -9,6 +9,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { Response } from 'express';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { DevicesService } from '../devices/devices.service';
 import { EmailService } from '../email/email.service';
@@ -176,6 +177,99 @@ export class AuthService {
 
     this.setAuthCookie(res, { ...user, plan: result.effectivePlan }, result.deviceId, result.sessionId);
     return { ...this.buildUserResponse({ ...user, plan: result.effectivePlan }), deviceLimitReached: result.limitReached };
+  }
+
+  // ── Forgot password — Step 1: send OTP ───────────────────────────
+  async forgotPassword(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    if (user) {
+      const otp          = this.generateOtp();
+      const hashedOtp    = await bcrypt.hash(otp, 10);
+      const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+
+      await this.prisma.passwordReset.upsert({
+        where:  { email },
+        update: { hashedOtp, otpExpiresAt, attempts: 0, hashedResetToken: null, resetTokenExpiry: null },
+        create: { email, hashedOtp, otpExpiresAt },
+      });
+
+      await this.emailService.sendPasswordResetOtp(email, user.name, otp);
+    }
+
+    // Always return the same message — don't reveal whether the email exists
+    return { message: 'If that email is registered, a reset code has been sent' };
+  }
+
+  // ── Forgot password — Step 2: verify OTP → issue reset token ─────
+  async verifyResetOtp(email: string, otp: string) {
+    const record = await this.prisma.passwordReset.findUnique({ where: { email } });
+    if (!record || !record.hashedOtp) throw new BadRequestException('Invalid or expired request');
+
+    if (new Date() > record.otpExpiresAt) {
+      await this.prisma.passwordReset.delete({ where: { email } });
+      throw new BadRequestException('Code has expired — please request a new one');
+    }
+
+    if (record.attempts >= 5) {
+      await this.prisma.passwordReset.delete({ where: { email } });
+      throw new HttpException('Too many failed attempts — please request a new code', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const valid = await bcrypt.compare(otp, record.hashedOtp);
+    if (!valid) {
+      await this.prisma.passwordReset.update({
+        where: { email },
+        data:  { attempts: { increment: 1 } },
+      });
+      const remaining = 5 - (record.attempts + 1);
+      throw new BadRequestException(
+        remaining > 0
+          ? `Invalid code — ${remaining} attempt${remaining === 1 ? '' : 's'} remaining`
+          : 'Invalid code — no attempts remaining. Please request a new one.',
+      );
+    }
+
+    // OTP verified — generate a short-lived reset token and clear the OTP
+    const resetToken      = randomUUID();
+    const hashedResetToken = await bcrypt.hash(resetToken, 10);
+
+    await this.prisma.passwordReset.update({
+      where: { email },
+      data:  {
+        hashedOtp:        '',                                            // invalidate OTP
+        hashedResetToken,
+        resetTokenExpiry: new Date(Date.now() + 15 * 60 * 1000),       // 15 min
+      },
+    });
+
+    return { resetToken }; // plaintext — frontend holds this in component state only
+  }
+
+  // ── Forgot password — Step 3: set new password ────────────────────
+  async resetPassword(email: string, resetToken: string, newPassword: string) {
+    const record = await this.prisma.passwordReset.findUnique({ where: { email } });
+
+    if (!record?.hashedResetToken) {
+      throw new BadRequestException('Invalid or expired reset session — please start again');
+    }
+
+    if (!record.resetTokenExpiry || new Date() > record.resetTokenExpiry) {
+      await this.prisma.passwordReset.delete({ where: { email } });
+      throw new BadRequestException('Reset session expired — please start again');
+    }
+
+    const valid = await bcrypt.compare(resetToken, record.hashedResetToken);
+    if (!valid) throw new BadRequestException('Invalid reset token');
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await Promise.all([
+      this.prisma.user.update({ where: { email }, data: { password: hashedPassword } }),
+      this.prisma.passwordReset.delete({ where: { email } }),
+    ]);
+
+    return { success: true };
   }
 
   // ── Verify password (used by the logout confirmation modal) ────────
