@@ -1,6 +1,7 @@
 import { Controller, Get, Put, Body } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { UpdateSettingsDto } from './dto/settings.dto';
 
 @Controller('settings')
 export class SettingsController {
@@ -12,7 +13,7 @@ export class SettingsController {
   }
 
   @Put()
-  updateSettings(@CurrentUser() user: any, @Body() body: any) {
+  updateSettings(@CurrentUser() user: any, @Body() body: UpdateSettingsDto) {
     return this.settingsService.updateSettings(user.id, body);
   }
 }

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Body, Param, Query } from '@nestjs/common';
 import { MembersService } from './members.service';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { CreateMemberDto, UpdateMemberDto } from './dto/member.dto';
 
 @Controller('members')
 export class MembersController {
@@ -22,12 +23,12 @@ export class MembersController {
   }
 
   @Post()
-  create(@CurrentUser() user: any, @Body() body: any) {
+  create(@CurrentUser() user: any, @Body() body: CreateMemberDto) {
     return this.membersService.create(user.id, user.plan, body);
   }
 
   @Put(':id')
-  update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: any) {
+  update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: UpdateMemberDto) {
     return this.membersService.update(user.id, id, body);
   }
 }

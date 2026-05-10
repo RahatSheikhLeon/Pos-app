@@ -4,6 +4,11 @@ import { Response, Request } from 'express';
 import { AuthService } from './auth.service';
 import { Public } from './public.decorator';
 import { CurrentUser } from './current-user.decorator';
+import {
+  RegisterStartDto, RegisterVerifyDto, RegisterResendDto,
+  LoginDto, ForgotPasswordDto, VerifyResetOtpDto, ResetPasswordDto,
+  ChangePasswordDto, VerifyPasswordDto, RecheckDeviceDto,
+} from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -12,16 +17,18 @@ export class AuthController {
     private readonly jwtService:  JwtService,
   ) {}
 
+  // ── Registration ───────────────────────────────────────────────────
+
   @Public()
   @Post('register')
-  startRegistration(@Body() body: { email: string; password: string; name: string }) {
+  startRegistration(@Body() body: RegisterStartDto) {
     return this.authService.startRegistration(body.email, body.password, body.name);
   }
 
   @Public()
   @Post('register/verify')
   verifyRegistration(
-    @Body() body: { email: string; otp: string; fingerprint?: string },
+    @Body() body: RegisterVerifyDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     return this.authService.verifyRegistration(body.email, body.otp, res, body.fingerprint);
@@ -29,79 +36,65 @@ export class AuthController {
 
   @Public()
   @Post('register/resend')
-  resendRegistrationOtp(@Body() body: { email: string }) {
+  resendRegistrationOtp(@Body() body: RegisterResendDto) {
     return this.authService.resendRegistrationOtp(body.email);
   }
+
+  // ── Login ──────────────────────────────────────────────────────────
 
   @Public()
   @Post('login')
   login(
-    @Body() body: { email: string; password: string; fingerprint?: string },
+    @Body() body: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     return this.authService.login(body.email, body.password, res, body.fingerprint);
   }
 
-  // ── Password-reset flow (all @Public) ────────────────────────────
+  // ── Password reset (public — unauthenticated flow) ─────────────────
 
   @Public()
   @Post('forgot-password')
-  forgotPassword(@Body() body: { email: string }) {
+  forgotPassword(@Body() body: ForgotPasswordDto) {
     return this.authService.forgotPassword(body.email);
   }
 
   @Public()
   @Post('forgot-password/verify-otp')
-  verifyResetOtp(@Body() body: { email: string; otp: string }) {
+  verifyResetOtp(@Body() body: VerifyResetOtpDto) {
     return this.authService.verifyResetOtp(body.email, body.otp);
   }
 
   @Public()
   @Post('reset-password')
-  resetPassword(@Body() body: { email: string; resetToken: string; newPassword: string }) {
+  resetPassword(@Body() body: ResetPasswordDto) {
     return this.authService.resetPassword(body.email, body.resetToken, body.newPassword);
   }
 
+  // ── Authenticated account management ──────────────────────────────
+
   @Post('change-password')
-  changePassword(
-    @CurrentUser() user: any,
-    @Body() body: { currentPassword: string; newPassword: string },
-  ) {
+  changePassword(@CurrentUser() user: any, @Body() body: ChangePasswordDto) {
     return this.authService.changePassword(user.id, body.currentPassword, body.newPassword);
   }
 
-  /** Verify the current user's password — used by the logout confirmation modal. */
   @Post('verify-password')
-  async verifyPassword(
-    @CurrentUser() user: any,
-    @Body() body: { password: string },
-  ) {
+  async verifyPassword(@CurrentUser() user: any, @Body() body: VerifyPasswordDto) {
     await this.authService.verifyPassword(user.id, body.password);
     return { valid: true };
   }
 
-  /** Re-issue JWT after device slot purchase; requires a valid session. */
   @Post('recheck-device')
   recheckDeviceLimit(
     @CurrentUser() user: any,
-    @Body() body: { fingerprint: string },
+    @Body() body: RecheckDeviceDto,
     @Res({ passthrough: true }) res: Response,
   ) {
     return this.authService.recheckDeviceLimit(user.id, body.fingerprint, res);
   }
 
-  /**
-   * Logout must NEVER require a valid token — the user is logging out precisely
-   * because they want to end their session.
-   *
-   * @Public() bypasses JwtAuthGuard so even expired or structurally invalid JWTs
-   * (e.g. old tokens issued before the per-device sessionId field existed) can
-   * still trigger a clean logout.
-   *
-   * We decode the cookie without validating the signature (best-effort) to get
-   * the userId + deviceId for DB cleanup. If the cookie is absent or malformed,
-   * we still clear the cookie — the user is signed out either way.
-   */
+  // ── Logout (public — no valid token required) ─────────────────────
+
   @Public()
   @Post('logout')
   logout(
@@ -110,7 +103,6 @@ export class AuthController {
   ) {
     let userId:   string | undefined;
     let deviceId: string | undefined;
-
     try {
       const token = (req as any).cookies?.access_token as string | undefined;
       if (token) {
@@ -118,10 +110,11 @@ export class AuthController {
         userId   = payload?.sub;
         deviceId = payload?.deviceId;
       }
-    } catch { /* ignore — clear the cookie regardless */ }
-
+    } catch { /* ignore decode errors */ }
     return this.authService.logout(userId, deviceId, res);
   }
+
+  // ── Profile ───────────────────────────────────────────────────────
 
   @Get('profile')
   getProfile(@CurrentUser() user: any) {

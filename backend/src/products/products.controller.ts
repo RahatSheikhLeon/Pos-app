@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -26,12 +27,12 @@ export class ProductsController {
   }
 
   @Post()
-  create(@CurrentUser() user: any, @Body() body: any) {
+  create(@CurrentUser() user: any, @Body() body: CreateProductDto) {
     return this.productsService.create(user.id, user.plan, body);
   }
 
   @Put(':id')
-  update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: any) {
+  update(@CurrentUser() user: any, @Param('id') id: string, @Body() body: UpdateProductDto) {
     return this.productsService.update(user.id, id, body);
   }
 
