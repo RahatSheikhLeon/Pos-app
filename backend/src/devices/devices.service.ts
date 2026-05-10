@@ -1,5 +1,6 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
 
 export interface DeviceCheckResult {
   effectivePlan: string;
@@ -102,12 +103,55 @@ export class DevicesService {
     }));
   }
 
-  // ── Remove a specific device ──────────────────────────────────────
+  // ── Remove a specific device (no password — used from DeviceLimitReached page) ──
   async removeDevice(userId: string, deviceId: string) {
     const device = await this.prisma.device.findFirst({ where: { id: deviceId, userId } });
     if (!device) throw new ForbiddenException('Device not found');
     await this.prisma.device.delete({ where: { id: deviceId } });
     return { success: true };
+  }
+
+  /**
+   * Secure device removal — requires the user's current password.
+   *
+   * On success:
+   * 1. Verifies password with bcrypt (generic error on failure — no oracle).
+   * 2. Atomically deletes the device record and increments tokenVersion.
+   *    Incrementing tokenVersion immediately invalidates every existing JWT for
+   *    this user; the controller must re-issue a fresh cookie for the caller.
+   * 3. Returns the new tokenVersion so the controller can embed it in the
+   *    replacement JWT without an extra DB round-trip.
+   */
+  async secureRemoveDevice(
+    userId:   string,
+    deviceId: string,
+    password: string,
+  ): Promise<{ newTokenVersion: number }> {
+    // 1. Confirm device belongs to this user
+    const device = await this.prisma.device.findFirst({ where: { id: deviceId, userId } });
+    if (!device) throw new ForbiddenException('Device not found');
+
+    // 2. Bcrypt verify — use a generic message to avoid password-oracle attacks
+    const user = await this.prisma.user.findUnique({
+      where:  { id: userId },
+      select: { password: true },
+    });
+    if (!user) throw new UnauthorizedException();
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) throw new UnauthorizedException('Invalid password');
+
+    // 3. Atomic: delete device + bump tokenVersion in one transaction
+    const [, updated] = await this.prisma.$transaction([
+      this.prisma.device.delete({ where: { id: deviceId } }),
+      this.prisma.user.update({
+        where:  { id: userId },
+        data:   { tokenVersion: { increment: 1 } },
+        select: { tokenVersion: true },
+      }),
+    ]);
+
+    return { newTokenVersion: updated.tokenVersion };
   }
 
   // ── Snapshot for the Device Limit page ───────────────────────────

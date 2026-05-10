@@ -1,14 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import {
   Check, Zap, Monitor, ShieldCheck, Loader2,
-  Clock, AlertCircle, Crown, ShoppingCart,
+  Clock, AlertCircle, Crown, ShoppingCart, Trash2, Eye, EyeOff, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { RootState } from '../store';
 import { stripeApi, subscriptionPlansApi, devicesApi } from '../services/api';
 import { SubscriptionPlan, UserSubscription } from '../types';
 import Modal from '../components/ui/Modal';
+import { getDeviceId } from '../utils/deviceId';
 
 // ── Per-plan visual theme ─────────────────────────────────────────
 const THEME: Record<string, {
@@ -71,13 +72,23 @@ export default function Subscription() {
   const [initiating, setInitiating]     = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
 
+  // ── Secure device removal modal ───────────────────────────────────
+  const [removeTarget, setRemoveTarget]   = useState<{ id: string; name: string } | null>(null);
+  const [removePassword, setRemovePassword] = useState('');
+  const [showRemovePassword, setShowRemovePassword] = useState(false);
+  const [removing, setRemoving]           = useState(false);
+  const [removeError, setRemoveError]     = useState<string | null>(null);
+  const passwordInputRef                  = useRef<HTMLInputElement>(null);
+
+  const fingerprint = getDeviceId();
+
   const loadData = async () => {
     setLoading(true);
     try {
       const [p, s, d, ps] = await Promise.all([
         subscriptionPlansApi.getAll(),
         stripeApi.getSubscription(),
-        devicesApi.list(),
+        devicesApi.list(fingerprint),   // pass fingerprint so isCurrent is populated
         stripeApi.getPaymentStatus(),
       ]);
       setPlans(p);
@@ -88,7 +99,7 @@ export default function Subscription() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activePlanId = subscription?.planId ?? 'plan_free';
   const isPro        = user?.plan !== 'free';
@@ -141,12 +152,36 @@ export default function Subscription() {
     }
   };
 
-  const handleRemoveDevice = async (id: string) => {
+  // ── Secure removal handlers ───────────────────────────────────────
+  const openRemoveModal = (device: { id: string; name: string }) => {
+    setRemoveTarget(device);
+    setRemovePassword('');
+    setRemoveError(null);
+    setShowRemovePassword(false);
+    setTimeout(() => passwordInputRef.current?.focus(), 80);
+  };
+
+  const closeRemoveModal = () => {
+    if (removing) return;
+    setRemoveTarget(null);
+    setRemovePassword('');
+    setRemoveError(null);
+  };
+
+  const handleSecureRemove = async () => {
+    if (!removeTarget || !removePassword) return;
+    setRemoving(true);
+    setRemoveError(null);
     try {
-      await devicesApi.remove(id);
-      setDevices(d => d.filter(dev => dev.id !== id));
-      toast.success('Device removed');
-    } catch { toast.error('Failed to remove device'); }
+      await devicesApi.secureRemove(removeTarget.id, removePassword);
+      setDevices(d => d.filter(dev => dev.id !== removeTarget.id));
+      closeRemoveModal();
+      toast.success('Device removed — all other sessions have been revoked');
+    } catch (err: any) {
+      setRemoveError(err.message || 'Incorrect password');
+    } finally {
+      setRemoving(false);
+    }
   };
 
   if (loading) {
@@ -405,39 +440,139 @@ export default function Subscription() {
 
       {/* ── Active Devices ───────────────────────────────────────── */}
       <div className="card overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+        <div className="px-5 py-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900 dark:text-white text-sm flex items-center gap-2">
             <Monitor size={15} className="text-gray-400" />
-            Active Devices ({devices.length}
-            {subscription?.plan?.maxDevices
-              ? ` / ${subscription.plan.maxDevices}`
-              : ''})
+            Active Devices
+            <span className="text-gray-400 font-normal">
+              ({devices.length}{subscription?.plan?.maxDevices ? ` / ${subscription.plan.maxDevices}` : ''})
+            </span>
             {isOverDeviceLimit && (
-              <span className="ml-1 text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full">
+              <span className="text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded-full">
                 Limit reached
               </span>
             )}
           </h2>
+          <span className="text-[11px] text-gray-400 flex items-center gap-1">
+            <Lock size={10} /> Password required to remove
+          </span>
         </div>
+
         {devices.length === 0 ? (
           <p className="px-5 py-8 text-center text-sm text-gray-400">No devices registered</p>
         ) : (
           <div className="divide-y divide-gray-50 dark:divide-gray-700/50">
             {devices.map((d) => (
-              <div key={d.id} className="flex items-center justify-between px-5 py-3">
-                <div>
-                  <p className="text-sm font-medium text-gray-900 dark:text-white">{d.name}</p>
-                  <p className="text-xs text-gray-400 font-mono">{d.fingerprint}</p>
+              <div key={d.id} className="flex items-center gap-3 px-5 py-3">
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                  d.isCurrent ? 'bg-indigo-100 dark:bg-indigo-900/30' : 'bg-gray-100 dark:bg-gray-700'
+                }`}>
+                  <Monitor size={14} className={d.isCurrent ? 'text-indigo-500' : 'text-gray-400'} />
                 </div>
-                <button onClick={() => handleRemoveDevice(d.id)}
-                  className="text-xs text-red-400 hover:text-red-600 transition-colors">
-                  Remove
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{d.name}</p>
+                    {d.isCurrent && (
+                      <span className="text-[10px] font-semibold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                        This device
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                    <Clock size={10} />
+                    {d.lastSeen ? `Last seen ${new Date(d.lastSeen).toLocaleString()}` : 'Never seen'}
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => openRemoveModal({ id: d.id, name: d.name })}
+                  className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 dark:hover:text-red-300 transition-colors flex-shrink-0"
+                >
+                  <Trash2 size={12} /> Remove
                 </button>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* ── Remove Device Modal (password-gated) ─────────────────── */}
+      <Modal
+        open={!!removeTarget}
+        onClose={closeRemoveModal}
+        title="Remove Device"
+        size="sm"
+      >
+        {removeTarget && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl px-4 py-3">
+              <div className="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+                <Monitor size={14} className="text-red-500" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{removeTarget.name}</p>
+                <p className="text-xs text-gray-400">This device will lose access immediately</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              Removing this device will <strong className="text-gray-700 dark:text-gray-200">invalidate all active sessions</strong>.
+              Every logged-in device will need to sign in again.
+              Enter your account password to confirm.
+            </p>
+
+            {removeError && (
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 text-xs px-3 py-2.5 rounded-lg">
+                {removeError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1.5">
+                Account password
+              </label>
+              <div className="relative">
+                <input
+                  ref={passwordInputRef}
+                  type={showRemovePassword ? 'text' : 'password'}
+                  value={removePassword}
+                  onChange={(e) => { setRemovePassword(e.target.value); setRemoveError(null); }}
+                  onKeyDown={(e) => e.key === 'Enter' && !removing && handleSecureRemove()}
+                  placeholder="Enter your password"
+                  className="w-full px-3 py-2.5 pr-9 rounded-lg bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowRemovePassword(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                >
+                  {showRemovePassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={closeRemoveModal}
+                disabled={removing}
+                className="btn-secondary flex-1 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSecureRemove}
+                disabled={removing || !removePassword}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
+              >
+                {removing
+                  ? <><Loader2 size={13} className="animate-spin" /> Removing…</>
+                  : <><Trash2 size={13} /> Remove Device</>}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ── Confirm Subscribe Modal ──────────────────────────────── */}
       <Modal open={showConfirm} onClose={() => !initiating && setShowConfirm(false)}

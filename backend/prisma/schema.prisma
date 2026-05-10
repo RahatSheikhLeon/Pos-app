@@ -18,6 +18,7 @@ model User {
   plan             String   @default("free")   // mirrors active subscription plan slug
   status           String   @default("active")
   isAdmin          Boolean  @default(false)
+  tokenVersion     Int      @default(0)           // incremented on device removal to revoke all sessions
   stripeCustomerId String?  @unique            // Stripe customer ID, set on first checkout
   createdAt        DateTime @default(now())
 

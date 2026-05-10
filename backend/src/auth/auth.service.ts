@@ -206,11 +206,12 @@ export class AuthService {
 
   private setAuthCookie(res: Response, user: any) {
     const token = this.jwtService.sign({
-      sub:     user.id,
-      email:   user.email,
-      name:    user.name,
-      plan:    user.plan,
-      isAdmin: user.isAdmin ?? false,
+      sub:          user.id,
+      email:        user.email,
+      name:         user.name,
+      plan:         user.plan,
+      isAdmin:      user.isAdmin ?? false,
+      tokenVersion: user.tokenVersion ?? 0,
     });
 
     res.cookie(COOKIE_NAME, token, {
