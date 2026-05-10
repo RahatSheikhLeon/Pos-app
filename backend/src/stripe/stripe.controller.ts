@@ -119,6 +119,95 @@ export class StripeController {
     return sub;
   }
 
+  // ── GET /stripe/device-slot-price ───────────────────────────────
+  // Returns the prorated cost for one additional device slot based on
+  // remaining subscription days.  Formula:
+  //   dailyRatePerDevice = planPrice / effectiveLimit / 30
+  //   cost = max(dailyRate × remainingDays, $1.00)
+  @Get('device-slot-price')
+  async getDeviceSlotPrice(@CurrentUser() user: any) {
+    const sub = await this.prisma.userSubscription.findUnique({
+      where:   { userId: user.id },
+      include: { plan: true },
+    });
+
+    if (!sub || sub.planId === 'plan_free') {
+      throw new BadRequestException('Device slot upgrades are only available for paid plans');
+    }
+
+    const planPrice      = sub.billingCycle === 'yearly' ? sub.plan.yearlyPrice : sub.plan.price;
+    const effectiveLimit = sub.plan.maxDevices + (sub.extraDevices ?? 0);
+    const dailyRate      = planPrice / effectiveLimit / 30;
+
+    const now         = new Date();
+    const endDate     = sub.endDate ? new Date(sub.endDate) : (() => {
+      const d = new Date(); d.setMonth(d.getMonth() + 1); return d;
+    })();
+    const remainingDays  = Math.max(
+      Math.ceil((endDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)), 1,
+    );
+    const priceUsd = Math.max(Math.round(dailyRate * remainingDays * 100) / 100, 1.00);
+
+    return {
+      priceUsd,
+      remainingDays,
+      dailyRate:    Math.round(dailyRate * 100) / 100,
+      planPrice,
+      currentLimit: effectiveLimit,
+      newLimit:     effectiveLimit + 1,
+      billingCycle: sub.billingCycle,
+      endDate:      endDate.toISOString(),
+    };
+  }
+
+  // ── POST /stripe/device-slot-checkout ───────────────────────────
+  @Post('device-slot-checkout')
+  async createDeviceSlotCheckout(@CurrentUser() user: any) {
+    const sub = await this.prisma.userSubscription.findUnique({
+      where:   { userId: user.id },
+      include: { plan: true },
+    });
+
+    if (!sub || sub.planId === 'plan_free') {
+      throw new BadRequestException('Device slot upgrades are only available for paid plans');
+    }
+
+    const planPrice      = sub.billingCycle === 'yearly' ? sub.plan.yearlyPrice : sub.plan.price;
+    const effectiveLimit = sub.plan.maxDevices + (sub.extraDevices ?? 0);
+    const dailyRate      = planPrice / effectiveLimit / 30;
+
+    const now           = new Date();
+    const endDate       = sub.endDate ? new Date(sub.endDate) : (() => {
+      const d = new Date(); d.setMonth(d.getMonth() + 1); return d;
+    })();
+    const remainingDays = Math.max(
+      Math.ceil((endDate.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)), 1,
+    );
+    const priceUsd = Math.max(Math.round(dailyRate * remainingDays * 100) / 100, 1.00);
+
+    const userRecord = await this.prisma.user.findUnique({ where: { id: user.id } });
+    let stripeCustomerId = userRecord?.stripeCustomerId;
+    if (!stripeCustomerId) {
+      stripeCustomerId = await this.stripeService.getOrCreateCustomer(user.id, user.email, user.name);
+      await this.prisma.user.update({ where: { id: user.id }, data: { stripeCustomerId } });
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    const session = await this.stripeService.createOneTimePaymentSession({
+      customerId:   stripeCustomerId,
+      productName:  `Extra Device Slot (+1 device until ${endDate.toLocaleDateString()})`,
+      amount:       priceUsd,
+      userId:       user.id,
+      extraDevices: 1,
+      successUrl:   `${frontendUrl}/device-limit?refresh=true`,
+      cancelUrl:    `${frontendUrl}/device-limit`,
+    });
+
+    console.log(`[DeviceSlot] Checkout created | userId: ${user.id} | price: $${priceUsd} | remainingDays: ${remainingDays}`);
+    return { sessionUrl: session.url, sessionId: session.id, priceUsd };
+  }
+
   // ── GET /stripe/payment-status ───────────────────────────────────
   @Get('payment-status')
   async getPaymentStatus(@CurrentUser() user: any) {
@@ -348,6 +437,11 @@ export class StripeController {
 
   // ── checkout.session.completed ───────────────────────────────────
   private async handleCheckoutCompleted(data: any) {
+    // Branch: device slot one-time purchase
+    if (data.metadata?.type === 'device_slot') {
+      return this.handleDeviceSlotPurchase(data);
+    }
+
     console.log('[Webhook:checkout] session id:', data.id);
     console.log('[Webhook:checkout] metadata:', JSON.stringify(data.metadata));
     console.log('[Webhook:checkout] customer:', data.customer);
@@ -647,5 +741,36 @@ export class StripeController {
     });
 
     console.log(`[Webhook:subscription.updated] Status: ${status} | userId: ${sub.userId}`);
+  }
+
+  // ── device_slot one-time purchase ─────────────────────────────────
+  private async handleDeviceSlotPurchase(data: any) {
+    const meta        = data.metadata ?? {};
+    const extraSlots  = Math.max(parseInt(meta.extraDevices ?? '1', 10), 1);
+    let   userId: string | undefined = meta.userId;
+
+    // Validate userId exists in DB
+    if (userId) {
+      const exists = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+      if (!exists) userId = undefined;
+    }
+
+    // Fallback: resolve via Stripe customer
+    if (!userId && data.customer) {
+      const rec = await this.prisma.user.findFirst({ where: { stripeCustomerId: data.customer } });
+      userId = rec?.id;
+    }
+
+    if (!userId) {
+      console.error('[Webhook:device_slot] Could not resolve userId — skipping');
+      return;
+    }
+
+    await this.prisma.userSubscription.update({
+      where: { userId },
+      data:  { extraDevices: { increment: extraSlots } },
+    });
+
+    console.log(`[Webhook:device_slot] ✅ +${extraSlots} device slot(s) | userId: ${userId}`);
   }
 }

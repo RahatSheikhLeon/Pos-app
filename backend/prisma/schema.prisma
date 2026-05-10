@@ -68,6 +68,7 @@ model UserSubscription {
   stripeSessionId      String?
   planName             String    @default("")
   billingCycle         String    @default("monthly")  // monthly | yearly
+  extraDevices         Int       @default(0)          // additional slots purchased beyond plan limit  // monthly | yearly
   status               String    @default("active")   // active | cancelled | past_due | expired
   startDate            DateTime  @default(now())
   endDate              DateTime?

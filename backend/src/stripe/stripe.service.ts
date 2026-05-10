@@ -78,6 +78,37 @@ export class StripeService {
     });
   }
 
+  // Create a one-time Stripe Checkout Session (device slot purchase)
+  async createOneTimePaymentSession(params: {
+    customerId: string;
+    productName: string;
+    amount: number;       // USD
+    userId: string;
+    extraDevices: number;
+    successUrl: string;
+    cancelUrl: string;
+  }): Promise<any> {
+    return this.stripe.checkout.sessions.create({
+      mode:     'payment',
+      customer: params.customerId,
+      line_items: [{
+        price_data: {
+          currency:     'usd',
+          product_data: { name: params.productName },
+          unit_amount:  Math.round(params.amount * 100),
+        },
+        quantity: 1,
+      }],
+      metadata: {
+        type:         'device_slot',
+        userId:       params.userId,
+        extraDevices: params.extraDevices.toString(),
+      },
+      success_url: params.successUrl,
+      cancel_url:  params.cancelUrl,
+    });
+  }
+
   // Cancel a Stripe subscription at period end
   async cancelSubscription(stripeSubscriptionId: string): Promise<any> {
     return this.stripe.subscriptions.update(stripeSubscriptionId, {

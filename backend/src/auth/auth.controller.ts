@@ -40,6 +40,16 @@ export class AuthController {
     return this.authService.login(body.email, body.password, res, body.fingerprint);
   }
 
+  /** Re-issue JWT after device removal or extra-slot purchase; no password required. */
+  @Post('recheck-device')
+  recheckDeviceLimit(
+    @CurrentUser() user: any,
+    @Body() body: { fingerprint: string },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.authService.recheckDeviceLimit(user.id, body.fingerprint, res);
+  }
+
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {
     return this.authService.logout(res);

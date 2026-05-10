@@ -148,18 +148,36 @@ export class AuthService {
 
     if (user.status !== 'active') throw new UnauthorizedException('Account suspended');
 
-    let effectivePlan = user.plan;
+    let effectivePlan  = user.plan;
+    let limitReached   = false;
 
     if (fingerprint && user.plan !== 'free') {
-      effectivePlan = await this.devicesService.checkAndRegisterDevice(
-        user.id,
-        fingerprint,
-        user.plan,
-      );
+      const result = await this.devicesService.checkAndRegisterDevice(user.id, fingerprint, user.plan);
+      effectivePlan = result.effectivePlan;
+      limitReached  = result.limitReached;
     }
 
     this.setAuthCookie(res, { ...user, plan: effectivePlan });
-    return this.buildUserResponse({ ...user, plan: effectivePlan });
+    return { ...this.buildUserResponse({ ...user, plan: effectivePlan }), deviceLimitReached: limitReached };
+  }
+
+  // ── Re-check device limit after removal or slot purchase ──────────
+  // Called with a valid JWT cookie, re-issues a fresh JWT and returns the updated state.
+  async recheckDeviceLimit(userId: string, fingerprint: string, res: Response) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+
+    if (user.plan === 'free' || !fingerprint) {
+      this.setAuthCookie(res, user);
+      return { ...this.buildUserResponse(user), deviceLimitReached: false };
+    }
+
+    const { effectivePlan, limitReached } = await this.devicesService.checkAndRegisterDevice(
+      user.id, fingerprint, user.plan,
+    );
+
+    this.setAuthCookie(res, { ...user, plan: effectivePlan });
+    return { ...this.buildUserResponse({ ...user, plan: effectivePlan }), deviceLimitReached: limitReached };
   }
 
   // ── Logout ────────────────────────────────────────────────────────

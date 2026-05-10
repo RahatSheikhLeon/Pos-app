@@ -11,19 +11,21 @@ interface AuthUser {
 }
 
 interface AuthState {
-  user:         AuthUser | null;
-  pendingEmail: string | null; // set after startRegistration, cleared after verify
-  loading:      boolean;
-  error:        string | null;
-  checked:      boolean;
+  user:               AuthUser | null;
+  pendingEmail:       string | null; // set after startRegistration, cleared after verify
+  deviceLimitReached: boolean;       // true when login succeeds but device is over-limit
+  loading:            boolean;
+  error:              string | null;
+  checked:            boolean;
 }
 
 const initialState: AuthState = {
-  user:         null,
-  pendingEmail: null,
-  loading:      false,
-  error:        null,
-  checked:      false,
+  user:               null,
+  pendingEmail:       null,
+  deviceLimitReached: false,
+  loading:            false,
+  error:              null,
+  checked:            false,
 };
 
 export const startRegistration = createAsyncThunk(
@@ -54,6 +56,13 @@ export const login = createAsyncThunk(
   }
 );
 
+export const recheckDeviceLimit = createAsyncThunk(
+  'auth/recheckDeviceLimit',
+  async (fingerprint: string) => {
+    return await authApi.recheckDeviceLimit(fingerprint);
+  }
+);
+
 export const fetchProfile = createAsyncThunk('auth/profile', async () => {
   return await authApi.profile();
 });
@@ -66,8 +75,9 @@ const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
-    clearError(state)  { state.error = null; },
-    clearPending(state) { state.pendingEmail = null; },
+    clearError(state)       { state.error = null; },
+    clearPending(state)     { state.pendingEmail = null; },
+    clearDeviceLimit(state) { state.deviceLimitReached = false; },
     updatePlan(state, action: PayloadAction<string>) {
       if (state.user) state.user.plan = action.payload;
     },
@@ -124,13 +134,21 @@ const authSlice = createSlice({
         state.error   = null;
       })
       .addCase(login.fulfilled, (state, action) => {
-        state.loading = false;
-        state.user    = action.payload;
-        state.checked = true;
+        state.loading             = false;
+        state.user                = action.payload;
+        state.deviceLimitReached  = action.payload?.deviceLimitReached ?? false;
+        state.checked             = true;
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
         state.error   = action.error.message || 'Login failed';
+      })
+
+      // recheckDeviceLimit
+      .addCase(recheckDeviceLimit.fulfilled, (state, action) => {
+        state.user               = action.payload;
+        state.deviceLimitReached = action.payload?.deviceLimitReached ?? false;
+        state.checked            = true;
       })
 
       // profile
@@ -151,5 +169,5 @@ const authSlice = createSlice({
   },
 });
 
-export const { clearError, clearPending, updatePlan, setChecked } = authSlice.actions;
+export const { clearError, clearPending, clearDeviceLimit, updatePlan, setChecked } = authSlice.actions;
 export default authSlice.reducer;

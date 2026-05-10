@@ -13,16 +13,16 @@ import Subscription from './pages/Subscription';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import PaymentReturn from './pages/PaymentReturn';
+import DeviceLimitReached from './pages/DeviceLimitReached';
 import { RootState, AppDispatch } from './store';
 import { fetchSettings } from './store/slices/settingsSlice';
 import { fetchProfile } from './store/slices/authSlice';
 
 function App() {
   const dispatch = useDispatch<AppDispatch>();
-  const { user, checked } = useSelector((state: RootState) => state.auth);
+  const { user, checked, deviceLimitReached } = useSelector((state: RootState) => state.auth);
   const theme = useSelector((state: RootState) => state.settings.theme);
 
-  // Verify auth via cookie (no localStorage token)
   useEffect(() => {
     if (!checked) dispatch(fetchProfile());
   }, [checked, dispatch]);
@@ -33,10 +33,9 @@ function App() {
   }, [theme]);
 
   useEffect(() => {
-    if (user && checked) dispatch(fetchSettings());
-  }, [user, checked, dispatch]);
+    if (user && checked && !deviceLimitReached) dispatch(fetchSettings());
+  }, [user, checked, deviceLimitReached, dispatch]);
 
-  // Show nothing while we confirm auth status
   if (!checked) return null;
 
   const isAuthenticated = !!user;
@@ -51,8 +50,21 @@ function App() {
         <Route path="/payment/success" element={<PaymentReturn type="success" />} />
         <Route path="/payment/cancel"  element={<PaymentReturn type="failed" />} />
 
-        {/* Protected POS app */}
-        <Route path="/" element={isAuthenticated ? <Layout /> : <Navigate to="/login" replace />}>
+        {/* Device limit page — requires auth, shown when over device limit */}
+        <Route
+          path="/device-limit"
+          element={isAuthenticated ? <DeviceLimitReached /> : <Navigate to="/login" replace />}
+        />
+
+        {/* Protected POS app — redirect to /device-limit when over limit */}
+        <Route
+          path="/"
+          element={
+            isAuthenticated
+              ? (deviceLimitReached ? <Navigate to="/device-limit" replace /> : <Layout />)
+              : <Navigate to="/login" replace />
+          }
+        >
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard"    element={<Dashboard />} />
           <Route path="products"     element={<Products />} />
@@ -60,7 +72,6 @@ function App() {
           <Route path="inventory"    element={<Inventory />} />
           <Route path="settings"     element={<Settings />} />
           <Route path="subscription" element={<Subscription />} />
-
           <Route path="transactions" element={<Transactions />} />
           <Route path="reports"      element={<Reports />} />
         </Route>

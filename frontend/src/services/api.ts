@@ -35,6 +35,8 @@ export const authApi = {
     http.post('/auth/login', { email, password, ...(fingerprint ? { fingerprint } : {}) }),
   logout: (): Promise<any> => http.post('/auth/logout'),
   profile: (): Promise<any> => http.get('/auth/profile'),
+  recheckDeviceLimit: (fingerprint: string): Promise<any> =>
+    http.post('/auth/recheck-device', { fingerprint }),
 };
 
 // ── Products ─────────────────────────────────────────────────────
@@ -156,7 +158,10 @@ export const settingsApi = {
 
 // ── Devices ──────────────────────────────────────────────────────
 export const devicesApi = {
-  list: (): Promise<any[]> => http.get('/devices'),
+  list: (fingerprint?: string): Promise<any[]> =>
+    http.get('/devices', { params: fingerprint ? { fingerprint } : undefined }),
+  limitInfo: (fingerprint?: string): Promise<any> =>
+    http.get('/devices/limit-info', { params: fingerprint ? { fingerprint } : undefined }),
   register: (fingerprint: string, name?: string): Promise<any> =>
     http.post('/devices/register', { fingerprint, name }),
   remove: (id: string): Promise<void> => http.delete(`/devices/${id}`),
@@ -182,6 +187,12 @@ export const stripeApi = {
     http.get('/stripe/payment-status'),
   cancelSubscription: (): Promise<{ success: boolean; message: string }> =>
     http.delete('/stripe/subscription'),
+  deviceSlotPrice: (): Promise<{
+    priceUsd: number; remainingDays: number; dailyRate: number;
+    currentLimit: number; newLimit: number; endDate: string; billingCycle: string;
+  }> => http.get('/stripe/device-slot-price'),
+  deviceSlotCheckout: (): Promise<{ sessionUrl: string; sessionId: string; priceUsd: number }> =>
+    http.post('/stripe/device-slot-checkout'),
 };
 
 // ── Legacy payments (keep for existing data) ─────────────────────
